@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0c0a1a;
+  --foreground: #e8e6f0;
+  --primary: #7c5cbf;
+  --primary-light: #a78bfa;
+  --primary-dark: #5b3d99;
+  --accent: #38bdf8;
+  --accent-green: #34d399;
+  --surface: #1a1730;
+  --surface-light: #252240;
+  --border: rgba(124, 92, 191, 0.2);
+  --border-hover: rgba(124, 92, 191, 0.45);
+  --text-muted: #9892b0;
+  --danger: #f87171;
+  --glow: rgba(124, 92, 191, 0.35);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-primary-dark: var(--primary-dark);
+  --color-accent: var(--accent);
+  --color-accent-green: var(--accent-green);
+  --color-surface: var(--surface);
+  --color-surface-light: var(--surface-light);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-text-muted: var(--text-muted);
+  --color-danger: var(--danger);
+  --color-glow: var(--glow);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+/* Animated gradient background */
+.bg-gradient-animated {
+  background: linear-gradient(135deg, #0c0a1a 0%, #1a1040 40%, #0f1a2e 70%, #0c0a1a 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Floating orbs */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+}
+
+/* Fade in animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease-out forwards;
+}
+
+.animate-fade-in-up-delay-1 {
+  animation: fadeInUp 0.7s ease-out 0.15s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-up-delay-2 {
+  animation: fadeInUp 0.7s ease-out 0.3s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-up-delay-3 {
+  animation: fadeInUp 0.7s ease-out 0.45s forwards;
+  opacity: 0;
+}
+
+/* Pulse glow */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(124, 92, 191, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(124, 92, 191, 0.4); }
+}
+
+.pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+/* Glass morphism card */
+.glass-card {
+  background: rgba(26, 23, 48, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+}
+
+/* Shake animation for errors */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.shake {
+  animation: shake 0.5s ease-in-out;
+}

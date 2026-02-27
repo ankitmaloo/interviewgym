@@ -149,6 +149,8 @@ Notes:
 
 const SCORER_SYSTEM = `You are an interview coach scoring a student's interview practice session using explicit transcript evidence.
 
+If company name and/or job role are provided, consider how well the responses are tailored to that specific context (e.g., relevant skills for the role, knowledge about the company). However, focus primarily on the quality and completeness of responses.
+
 You MUST score every subsection listed below and output EXACTLY the schema required.
 
 Scoring scale:
@@ -212,9 +214,15 @@ Red flags include (non-exhaustive): speaking negatively about others (previous e
 
 function buildScorerUser(
   evidenceJson: string,
-  transcriptTurns: string
+  transcriptTurns: string,
+  company?: string,
+  jobRole?: string
 ): string {
-  return `1) Extracted evidence events JSON:
+  const contextInfo = company || jobRole
+    ? `\n0) Interview Context:\n${jobRole ? `Position: ${jobRole}` : ''}${jobRole && company ? '\n' : ''}${company ? `Company: ${company}` : ''}\n`
+    : '';
+
+  return `${contextInfo}1) Extracted evidence events JSON:
 ${evidenceJson}
 
 2) Transcript turns:
@@ -234,6 +242,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const transcript: string | undefined = body.transcript;
+    const company: string | undefined = body.company;
+    const jobRole: string | undefined = body.jobRole;
 
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
@@ -242,7 +252,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[evaluate] len(transcript) = ${transcript.length}`);
+    console.log(`[evaluate] len(transcript) = ${transcript.length}${company ? `, company: ${company}` : ''}${jobRole ? `, role: ${jobRole}` : ''}`);
 
     // Step 1 — extract evidence
     const t_start_step1 = Date.now();
@@ -272,7 +282,7 @@ export async function POST(request: NextRequest) {
 
     // Step 2 — score performance
     const t_start_step2 = Date.now();
-    const scorerUserPrompt = buildScorerUser(evidenceJson, transcript);
+    const scorerUserPrompt = buildScorerUser(evidenceJson, transcript, company, jobRole);
     const rawScores = await callMinimax(SCORER_SYSTEM, scorerUserPrompt);
     const t_end_step2 = Date.now();
     console.log(`[evaluate] Step 2 (score): ${t_end_step2 - t_start_step2}ms`);

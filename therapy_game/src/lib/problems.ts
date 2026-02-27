@@ -21,6 +21,9 @@ export type Problem = {
  *   NEXT_PUBLIC_AGENT_<ID>_EASY=agent_xxxxx
  *   NEXT_PUBLIC_AGENT_<ID>_MEDIUM=agent_xxxxx
  *   NEXT_PUBLIC_AGENT_<ID>_HARD=agent_xxxxx
+ *
+ * Note: [COMPANY] and [ROLE] are placeholders that can be dynamically
+ * replaced in the UI with actual company names and job roles.
  */
 export const problems: Problem[] = [
     {
@@ -42,7 +45,7 @@ export const problems: Problem[] = [
         id: "2",
         title: "Leadership & Initiative",
         description:
-            "Answer questions about times you've taken initiative, led projects, or influenced others. Show your leadership potential through concrete examples and measurable outcomes.",
+            "Answer questions about times you've taken initiative, led projects, or influenced others. Show your leadership potential relevant to [ROLE] through concrete examples and measurable outcomes.",
         category: "Behavioral",
         agents: {
             easy: process.env.NEXT_PUBLIC_AGENT_2_EASY || "",
@@ -72,7 +75,7 @@ export const problems: Problem[] = [
         id: "4",
         title: "Tell Me About Yourself",
         description:
-            "Practice your elevator pitch and career story. Learn to concisely communicate your background, skills, interests, and why you're a great fit for the role.",
+            "Practice your elevator pitch and career story. Learn to concisely communicate your background, skills, interests, and why you're a great fit for [ROLE] at [COMPANY].",
         category: "Introduction",
         agents: {
             easy: process.env.NEXT_PUBLIC_AGENT_4_EASY || "",
@@ -162,7 +165,7 @@ export const problems: Problem[] = [
         id: "10",
         title: "System Design & Architecture",
         description:
-            "Answer questions about designing or architecting technical solutions. Explain your decision-making process, trade-offs considered, and how you balanced requirements like scalability, performance, and maintainability.",
+            "Answer questions about designing or architecting technical solutions relevant to [ROLE] at [COMPANY]. Explain your decision-making process, trade-offs considered, and how you balanced requirements like scalability, performance, and maintainability.",
         category: "Technical Behavioral",
         agents: {
             easy: process.env.NEXT_PUBLIC_AGENT_10_EASY || "",
@@ -177,4 +180,37 @@ export const problems: Problem[] = [
 
 export function getProblemById(id: string): Problem | undefined {
     return problems.find((p) => p.id === id);
+}
+
+/**
+ * Replace [COMPANY] and [ROLE] placeholders in text
+ * @param text - Text containing placeholders
+ * @param company - Company name (optional)
+ * @param jobRole - Job role (optional)
+ * @returns Text with placeholders replaced or removed
+ */
+export function replacePlaceholders(
+    text: string,
+    company?: string,
+    jobRole?: string
+): string {
+    let result = text;
+
+    if (jobRole) {
+        result = result.replace(/\[ROLE\]/g, jobRole);
+    } else {
+        // Remove [ROLE] and adjust grammar if no role provided
+        result = result.replace(/\s*(for|relevant to)\s*\[ROLE\]\s*/g, ' ');
+        result = result.replace(/\[ROLE\]/g, 'the role');
+    }
+
+    if (company) {
+        result = result.replace(/\[COMPANY\]/g, company);
+    } else {
+        // Remove [COMPANY] and adjust grammar if no company provided
+        result = result.replace(/\s*at\s*\[COMPANY\]/g, '');
+        result = result.replace(/\[COMPANY\]/g, 'the company');
+    }
+
+    return result;
 }

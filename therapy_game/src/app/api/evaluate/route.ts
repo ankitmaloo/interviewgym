@@ -51,11 +51,11 @@ function parseJsonFromLLM(raw: string): unknown {
 
 // ── Step 1 prompt ──────────────────────────────────────────────────────────
 
-const EXTRACTOR_SYSTEM = `You are a forensic behavioral evidence extractor for ICF coaching evaluation.
+const EXTRACTOR_SYSTEM = `You are a forensic behavioral evidence extractor for interview practice evaluation.
 
 Your job is NOT to evaluate or score.
 
-Your job is to extract observable, transcript-grounded evidence events that could be used to score ICF Core Competencies / PCC markers.
+Your job is to extract observable, transcript-grounded evidence events from interview practice sessions that could be used to assess interview response completeness and quality. Students may use STAR (Situation, Task, Action, Result) or CARL (Context, Action, Result, Learning) methods, or simply provide complete answers.
 
 Hard rules:
 - Extract only what is explicitly observable in the transcript.
@@ -67,20 +67,20 @@ Hard rules:
 
 EVENT TAXONOMY (use only these):
 
-Agreements & Contracting:
-SESSION_GOAL_ESTABLISHED, SESSION_GOAL_CLARIFIED, SESSION_AGREEMENT_CONFIRMED, RECONTRACTING_MOMENT, AGENDA_DRIFT, AGENDA_OVERRIDE
+Answer Completeness Components:
+CONTEXT_PROVIDED, TASK_PROVIDED, ACTION_PROVIDED, RESULT_PROVIDED, LEARNING_PROVIDED, MISSING_CONTEXT, MISSING_ACTION, MISSING_RESULT, ANSWER_HAS_BEGINNING_MIDDLE_END
 
-Presence & Partnership:
-ACKNOWLEDGES_CLIENT_LANGUAGE, LETS_CLIENT_LEAD, INTERRUPTS_CLIENT, COACH_LONG_MONOLOGUE, INVALIDATES_CLIENT, THERAPY_STYLE_INTERPRETATION
+Response Quality:
+SPECIFIC_EXAMPLE, QUANTIFIABLE_RESULT, CONCRETE_DETAILS, VAGUE_RESPONSE, RAMBLING_RESPONSE, OFF_TOPIC_RESPONSE, INCOMPLETE_ANSWER, SUPERFICIAL_ANSWER, OVERLY_VERBOSE_RESPONSE
 
-Active Listening:
-PARAPHRASE_ACCURATE, PARAPHRASE_INACCURATE, REFLECTS_EMOTION, OBSERVES_PATTERN, SUMMARIZES_PROGRESS
+Communication Skills:
+CLEAR_ARTICULATION, STRUCTURED_RESPONSE, LOGICAL_FLOW, CONFIDENT_DELIVERY, CONCISE_RESPONSE, APPROPRIATE_LENGTH, USES_FILLER_WORDS, UNCLEAR_COMMUNICATION, CONTRADICTORY_STATEMENTS, LOSES_TRAIN_OF_THOUGHT
 
-Evokes Awareness:
-POWERFUL_OPEN_QUESTION, LEADING_QUESTION, STACKED_QUESTION, REFRAME, EXPLORES_BELIEF, EXPLORES_IDENTITY, EXPLORES_EMOTION, CLIENT_INSIGHT, COACH_ACKNOWLEDGES_INSIGHT
+Professionalism:
+POSITIVE_FRAMING, DEMONSTRATES_SKILLS, SHOWS_LEARNING, TAKES_OWNERSHIP, SPEAKS_NEGATIVELY_ABOUT_OTHERS, MAKES_EXCUSES, OVERLY_CASUAL, DEFENSIVE_TONE
 
-Ethics / Red Flags:
-ADVICE_GIVING, DIAGNOSIS, MORALIZING, JUDGMENT, COACHING_THERAPY_BOUNDARY_SHIFT
+Question Handling:
+DIRECTLY_ANSWERS_QUESTION, CLARIFIES_QUESTION, AVOIDS_QUESTION, MISUNDERSTANDS_QUESTION, PROVIDES_RELEVANT_CONTEXT
 
 OUTPUT JSON SHAPE (exact):
 
@@ -88,61 +88,73 @@ OUTPUT JSON SHAPE (exact):
   "events": [
     {
       "event_type": "<EVENT_TYPE>",
-      "category": "<Agreements & Contracting | Presence & Partnership | Active Listening | Evokes Awareness | Ethics / Red Flags>",
+      "category": "<Answer Completeness Components | Response Quality | Communication Skills | Professionalism | Question Handling>",
       "turn_ids": [<turn_id>],
       "quote": "Exact verbatim quote from the transcript turn(s).",
       "context_summary": "1 short sentence describing what happened, without judgment."
     }
   ],
   "summary_counts": {
-    "SESSION_GOAL_ESTABLISHED": 0,
-    "SESSION_GOAL_CLARIFIED": 0,
-    "SESSION_AGREEMENT_CONFIRMED": 0,
-    "RECONTRACTING_MOMENT": 0,
-    "AGENDA_DRIFT": 0,
-    "AGENDA_OVERRIDE": 0,
-    "ACKNOWLEDGES_CLIENT_LANGUAGE": 0,
-    "LETS_CLIENT_LEAD": 0,
-    "INTERRUPTS_CLIENT": 0,
-    "COACH_LONG_MONOLOGUE": 0,
-    "INVALIDATES_CLIENT": 0,
-    "THERAPY_STYLE_INTERPRETATION": 0,
-    "PARAPHRASE_ACCURATE": 0,
-    "PARAPHRASE_INACCURATE": 0,
-    "REFLECTS_EMOTION": 0,
-    "OBSERVES_PATTERN": 0,
-    "SUMMARIZES_PROGRESS": 0,
-    "POWERFUL_OPEN_QUESTION": 0,
-    "LEADING_QUESTION": 0,
-    "STACKED_QUESTION": 0,
-    "REFRAME": 0,
-    "EXPLORES_BELIEF": 0,
-    "EXPLORES_IDENTITY": 0,
-    "EXPLORES_EMOTION": 0,
-    "CLIENT_INSIGHT": 0,
-    "COACH_ACKNOWLEDGES_INSIGHT": 0,
-    "ADVICE_GIVING": 0,
-    "DIAGNOSIS": 0,
-    "MORALIZING": 0,
-    "JUDGMENT": 0,
-    "COACHING_THERAPY_BOUNDARY_SHIFT": 0
+    "CONTEXT_PROVIDED": 0,
+    "TASK_PROVIDED": 0,
+    "ACTION_PROVIDED": 0,
+    "RESULT_PROVIDED": 0,
+    "LEARNING_PROVIDED": 0,
+    "MISSING_CONTEXT": 0,
+    "MISSING_ACTION": 0,
+    "MISSING_RESULT": 0,
+    "ANSWER_HAS_BEGINNING_MIDDLE_END": 0,
+    "SPECIFIC_EXAMPLE": 0,
+    "QUANTIFIABLE_RESULT": 0,
+    "CONCRETE_DETAILS": 0,
+    "VAGUE_RESPONSE": 0,
+    "RAMBLING_RESPONSE": 0,
+    "OFF_TOPIC_RESPONSE": 0,
+    "INCOMPLETE_ANSWER": 0,
+    "SUPERFICIAL_ANSWER": 0,
+    "OVERLY_VERBOSE_RESPONSE": 0,
+    "CLEAR_ARTICULATION": 0,
+    "STRUCTURED_RESPONSE": 0,
+    "LOGICAL_FLOW": 0,
+    "CONFIDENT_DELIVERY": 0,
+    "CONCISE_RESPONSE": 0,
+    "APPROPRIATE_LENGTH": 0,
+    "USES_FILLER_WORDS": 0,
+    "UNCLEAR_COMMUNICATION": 0,
+    "CONTRADICTORY_STATEMENTS": 0,
+    "LOSES_TRAIN_OF_THOUGHT": 0,
+    "POSITIVE_FRAMING": 0,
+    "DEMONSTRATES_SKILLS": 0,
+    "SHOWS_LEARNING": 0,
+    "TAKES_OWNERSHIP": 0,
+    "SPEAKS_NEGATIVELY_ABOUT_OTHERS": 0,
+    "MAKES_EXCUSES": 0,
+    "OVERLY_CASUAL": 0,
+    "DEFENSIVE_TONE": 0,
+    "DIRECTLY_ANSWERS_QUESTION": 0,
+    "CLARIFIES_QUESTION": 0,
+    "AVOIDS_QUESTION": 0,
+    "MISUNDERSTANDS_QUESTION": 0,
+    "PROVIDES_RELEVANT_CONTEXT": 0
   }
 }
 
 Notes:
-- category must be one of: "Agreements & Contracting", "Presence & Partnership", "Active Listening", "Evokes Awareness", "Ethics / Red Flags"
-- If there are no events, return events: [] and leave all counts at 0.`;
+- category must be one of: "Answer Completeness Components", "Response Quality", "Communication Skills", "Professionalism", "Question Handling"
+- If there are no events, return events: [] and leave all counts at 0.
+- CONCISE_RESPONSE and APPROPRIATE_LENGTH apply when responses are focused and efficient (ideally under 2 minutes worth of content)
+- OVERLY_VERBOSE_RESPONSE applies when responses are excessively long, repetitive, or contain unnecessary details`;
 
 // ── Step 2 prompt ──────────────────────────────────────────────────────────
 
-const SCORER_SYSTEM = `You are an ICF assessor scoring a coaching transcript using explicit transcript evidence.
+const SCORER_SYSTEM = `You are an interview coach scoring a student's interview practice session using explicit transcript evidence.
 
 You MUST score every subsection listed below and output EXACTLY the schema required.
 
 Scoring scale:
-0.0 = Not demonstrated
-1.0 = Inconsistent / surface-level
-2.0 = Clear, consistent, effective demonstration
+0.0 = Not demonstrated / Poor
+1.0 = Partially demonstrated / Needs improvement
+2.0 = Well demonstrated / Strong performance
 
 IMPORTANT:
 - You MUST output scores in the 0.0–2.0 scale with ONE decimal place.
@@ -155,45 +167,48 @@ Hard rules:
 - Output MUST contain exactly 17 objects: 16 metric objects (4 per section) in the order below, then 1 RED_FLAGS object at the end.
 - The only keys allowed in each object are: category, metric, score, comments.
 - Every comments must reference at least one turn ID (e.g., "T12").
-- comments should be 2-5 sentences.
+- comments should be 2-5 sentences providing specific, actionable feedback.
 - If insufficient evidence exists, score must be 0.0.
-- Do NOT reward warmth, charisma, confidence, or length.
+- Focus on substance and content quality, not personality or charm.
 - Use only: 1) the transcript, 2) the extracted evidence events JSON.
+- IMPORTANT: Interview best practice is to keep responses to 2 minutes or less. Penalize overly verbose, rambling, or excessively long responses.
 
 SUBSECTIONS TO SCORE:
 
-A3 — Establishes & Maintains Agreements → category = "Establishes & Maintains Agreements"
-  A3.1 metric = "Session Outcome Clarity"
-  A3.2 metric = "Partnership in Agreement"
-  A3.3 metric = "Maintains Focus on Agreed Outcome"
-  A3.4 metric = "Re-contracts When Needed"
+I1 — Answer Completeness → category = "Answer Completeness"
+  I1.1 metric = "Provides Context/Background"
+  I1.2 metric = "Explains Actions Taken"
+  I1.3 metric = "States Clear Results/Outcomes"
+  I1.4 metric = "Includes Learning/Reflection (when applicable)"
 
-A5 — Maintains Presence → category = "Maintains Presence"
-  A5.1 metric = "Demonstrates Curiosity"
-  A5.2 metric = "Lets Client Lead"
-  A5.3 metric = "Responsive to Client Emotions"
-  A5.4 metric = "Flexible to What Emerges"
+  Note: Students may use STAR (Situation, Task, Action, Result) or CARL (Context, Action, Result, Learning) frameworks, or simply provide complete answers. Score based on whether the answer has a clear beginning (context/setup), middle (what they did), and end (outcome/impact), not strict adherence to a specific framework.
 
-A6 — Listens Actively → category = "Listens Actively"
-  A6.1 metric = "Accurate Paraphrasing"
-  A6.2 metric = "Reflects Emotion"
-  A6.3 metric = "Observes Patterns"
-  A6.4 metric = "Integrates Multiple Client Threads"
+I2 — Response Quality & Specificity → category = "Response Quality & Specificity"
+  I2.1 metric = "Uses Specific Concrete Examples"
+  I2.2 metric = "Provides Relevant Details and Evidence"
+  I2.3 metric = "Stays On Topic and Focused"
+  I2.4 metric = "Answers Question Fully and Directly"
 
-A7 — Evokes Awareness → category = "Evokes Awareness"
-  A7.1 metric = "Uses Powerful Open Questions"
-  A7.2 metric = "Explores Beliefs and Identity"
-  A7.3 metric = "Encourages New Perspectives"
-  A7.4 metric = "Supports Client-Generated Insight"
+I3 — Communication & Delivery → category = "Communication & Delivery"
+  I3.1 metric = "Clear and Articulate"
+  I3.2 metric = "Well-Structured with Logical Flow"
+  I3.3 metric = "Concise and Appropriate Length (ideally ≤2 min)"
+  I3.4 metric = "Minimal Filler Words and Verbal Tics"
+
+I4 — Professionalism & Mindset → category = "Professionalism & Mindset"
+  I4.1 metric = "Uses Positive/Constructive Framing"
+  I4.2 metric = "Demonstrates Relevant Skills/Competencies"
+  I4.3 metric = "Shows Growth and Self-Awareness"
+  I4.4 metric = "Maintains Professional Tone"
 
 RED FLAGS REQUIREMENT (must always append at end):
   category = "RED_FLAGS"
-  metric = "Session Red Flags Summary"
+  metric = "Interview Red Flags Summary"
   score = 0
   comments = 0-5 brief bullet points (each bullet should include a turn ID if applicable)
   If no red flags: comments = "• No significant red flags detected."
 
-Red flags include (non-exhaustive): advice-giving, diagnosis, moralizing / judgment, coaching-therapy boundary shift, agenda override, invalidation, repeated stacked questions / leading questions, excessive coach talk / long monologues.`;
+Red flags include (non-exhaustive): speaking negatively about others (previous employers, colleagues, teammates), making excuses or deflecting responsibility, being overly casual or unprofessional, avoiding or dodging questions, contradictory statements, vague or rambling responses without substance, overly verbose responses (significantly exceeding 2 minutes), failure to answer questions directly, defensive tone, inappropriate content, losing train of thought repeatedly.`;
 
 function buildScorerUser(
   evidenceJson: string,
@@ -206,10 +221,10 @@ ${evidenceJson}
 ${transcriptTurns}
 
 Return a JSON array with objects in this exact order:
-1-4: category "Establishes & Maintains Agreements" with its 4 metrics
-5-8: category "Maintains Presence" with its 4 metrics
-9-12: category "Listens Actively" with its 4 metrics
-13-16: category "Evokes Awareness" with its 4 metrics
+1-4: category "Answer Completeness" with its 4 metrics
+5-8: category "Response Quality & Specificity" with its 4 metrics
+9-12: category "Communication & Delivery" with its 4 metrics
+13-16: category "Professionalism & Mindset" with its 4 metrics
 17: the RED_FLAGS object`;
 }
 

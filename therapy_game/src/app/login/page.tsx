@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { buildUserIdFromEmail } from "@/lib/userIdentity";
 
 const VALID_EMAIL = "admin@admin.com";
 const VALID_PASSWORD = "admin";
@@ -31,6 +32,7 @@ export default function LoginPage() {
     if (email === VALID_EMAIL && password === VALID_PASSWORD) {
       // Store auth state in localStorage
       localStorage.setItem("iaso_ai_auth", "true");
+      localStorage.setItem("iaso_ai_user_id", buildUserIdFromEmail(email));
       router.push("/");
     } else {
       setLoading(false);

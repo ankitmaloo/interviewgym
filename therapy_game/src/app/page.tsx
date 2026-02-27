@@ -4,13 +4,10 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { getClientUserId } from "@/lib/userIdentity";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
   RadarChart,
   Radar,
   PolarGrid,
@@ -21,7 +18,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 
 /* ─── Helpers ─── */
@@ -111,6 +107,32 @@ const navItems = [
   { icon: Icons.analytics, label: "Analytics", href: "/analytics" },
 ];
 
+type MemoryInsight = {
+  metric: string;
+  category: string;
+  avgScore: number;
+  samples: number;
+  lastFeedback: string | null;
+};
+
+type MemoryInterview = {
+  sessionId: string;
+  problemId: string;
+  problemTitle: string;
+  difficulty: string;
+  overallScore: number;
+  duration: number;
+  createdAt: number;
+};
+
+type MemorySummary = {
+  enabled: boolean;
+  message?: string;
+  strengths: MemoryInsight[];
+  weaknesses: MemoryInsight[];
+  recentInterviews: MemoryInterview[];
+};
+
 /* ─── Metric Card ─── */
 
 function MetricCard({
@@ -178,6 +200,8 @@ export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(null);
+  const [memoryLoading, setMemoryLoading] = useState(true);
 
   const stats = useQuery(api.sessions.getDashboardStats);
 
@@ -190,6 +214,54 @@ export default function Home() {
     }
     setChecking(false);
   }, [router]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchMemorySummary = async () => {
+      setMemoryLoading(true);
+      try {
+        const userId = encodeURIComponent(getClientUserId());
+        const res = await fetch(`/api/memory/summary?userId=${userId}`);
+
+        if (!res.ok) {
+          throw new Error(`Memory request failed (${res.status})`);
+        }
+
+        const data = (await res.json()) as MemorySummary;
+        if (!cancelled) {
+          setMemorySummary(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMemorySummary({
+            enabled: false,
+            message:
+              error instanceof Error
+                ? error.message
+                : "Memory service unavailable.",
+            strengths: [],
+            weaknesses: [],
+            recentInterviews: [],
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setMemoryLoading(false);
+        }
+      }
+    };
+
+    void fetchMemorySummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
 
   const handleLogout = () => {
     localStorage.removeItem("iaso_ai_auth");
@@ -214,6 +286,10 @@ export default function Home() {
       label: s.problemTitle
     }));
   }, [stats]);
+
+  const strengths = memorySummary?.strengths ?? [];
+  const weaknesses = memorySummary?.weaknesses ?? [];
+  const memoryInterviews = memorySummary?.recentInterviews ?? [];
 
   if (checking || !authenticated || stats === undefined) {
     return (
@@ -358,6 +434,123 @@ export default function Home() {
               gradient="from-[#f472b6] to-[#a78bfa]"
               delay={0.3}
             />
+          </div>
+
+          {/* ─── Interview Memory ─── */}
+          <div className="mt-6 grid gap-5 lg:grid-cols-3">
+            <div
+              className="glass-card col-span-1 p-6 lg:col-span-2"
+              style={{ animation: "fadeInUp 0.6s ease-out 0.4s forwards", opacity: 0 }}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Interview Memory</h2>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Neo4j summary of what you are strong at and where to improve
+                  </p>
+                </div>
+                <span className="rounded-md bg-[var(--surface-light)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Neo4j
+                </span>
+              </div>
+
+              {memoryLoading ? (
+                <div className="flex h-36 items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--primary-light)] border-t-transparent" />
+                </div>
+              ) : !memorySummary?.enabled ? (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-light)]/20 p-4 text-sm text-[var(--text-muted)]">
+                  {memorySummary?.message ||
+                    "Memory is disabled. Add NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD to enable it."}
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-[var(--accent-green)]">Good At</h3>
+                    {strengths.length === 0 ? (
+                      <p className="text-sm text-[var(--text-muted)]">
+                        Complete a few interviews to build strengths.
+                      </p>
+                    ) : (
+                      strengths.map((item) => (
+                        <div key={`${item.category}-${item.metric}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-light)]/20 p-3">
+                          <p className="text-sm font-medium text-white">{item.metric}</p>
+                          <p className="text-xs text-[var(--text-muted)]">{item.category}</p>
+                          <p className="mt-1 text-xs text-[var(--accent-green)]">
+                            Avg {item.avgScore.toFixed(1)}/10 across {item.samples} sessions
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-red-300">Needs Work</h3>
+                    {weaknesses.length === 0 ? (
+                      <p className="text-sm text-[var(--text-muted)]">
+                        No recurring weakness yet.
+                      </p>
+                    ) : (
+                      weaknesses.map((item) => (
+                        <div key={`${item.category}-${item.metric}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-light)]/20 p-3">
+                          <p className="text-sm font-medium text-white">{item.metric}</p>
+                          <p className="text-xs text-[var(--text-muted)]">{item.category}</p>
+                          <p className="mt-1 text-xs text-red-300">
+                            Avg {item.avgScore.toFixed(1)}/10 across {item.samples} sessions
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="glass-card p-6"
+              style={{ animation: "fadeInUp 0.6s ease-out 0.45s forwards", opacity: 0 }}
+            >
+              <h2 className="text-lg font-semibold text-white">Previous Interviews</h2>
+              <p className="mb-4 text-sm text-[var(--text-muted)]">
+                Retrieved from memory graph
+              </p>
+
+              {memoryLoading ? (
+                <div className="flex h-36 items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--primary-light)] border-t-transparent" />
+                </div>
+              ) : !memorySummary?.enabled ? (
+                <p className="text-sm text-[var(--text-muted)]">Memory unavailable.</p>
+              ) : memoryInterviews.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No interviews in memory yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {memoryInterviews.map((session) => (
+                    <button
+                      key={session.sessionId}
+                      onClick={() =>
+                        router.push(
+                          `/practice/${session.problemId}/analysis?session=${session.sessionId}`
+                        )
+                      }
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition-all duration-200 hover:border-[var(--border)] hover:bg-[var(--surface-light)]"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">{session.problemTitle}</p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {session.difficulty.toUpperCase()} · {formatDuration(session.duration)}
+                        </p>
+                      </div>
+                      <span className="text-xs font-semibold text-[var(--primary-light)]">
+                        {session.overallScore}%
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ─── Charts Row 1 ─── */}

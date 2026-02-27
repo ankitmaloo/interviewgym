@@ -6,6 +6,11 @@ import { useConversation } from "@elevenlabs/react";
 import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { getProblemById, type Difficulty } from "@/lib/problems";
+import {
+    loadRoleTargetsFromStorage,
+    loadSelectedRoleTargetId,
+    type RoleTarget,
+} from "@/lib/roleTargets";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -103,10 +108,12 @@ export default function PracticeSessionPage() {
     const problemId = params.id as string;
     const problem = getProblemById(problemId);
     const difficulty = (searchParams.get("difficulty") || "easy") as Difficulty;
+    const focusRoleIdFromQuery = searchParams.get("focusRole");
 
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [focusedRole, setFocusedRole] = useState<RoleTarget | null>(null);
     const [notes, setNotes] = useState(
         "Session Notes\n─────────────────────\n\n• Key observations:\n\n\n• Action items:\n\n\n• Follow-up questions:\n\n"
     );
@@ -177,6 +184,20 @@ export default function PracticeSessionPage() {
         }
         setChecking(false);
     }, [router]);
+
+    useEffect(() => {
+        if (!authenticated) return;
+
+        const storedTargets = loadRoleTargetsFromStorage();
+        const requestedRoleId = focusRoleIdFromQuery || loadSelectedRoleTargetId();
+        if (!requestedRoleId) {
+            setFocusedRole(null);
+            return;
+        }
+
+        const matchingRole = storedTargets.find((target) => target.id === requestedRoleId) ?? null;
+        setFocusedRole(matchingRole);
+    }, [authenticated, focusRoleIdFromQuery]);
 
     // Call timer
     useEffect(() => {
@@ -274,9 +295,14 @@ export default function PracticeSessionPage() {
                             : 0;
 
                         // Save to Convex
+                        const baseTitle = problem?.title || `Problem ${problemId}`;
+                        const sessionTitle = focusedRole
+                            ? `${baseTitle} · ${focusedRole.role}`
+                            : baseTitle;
+
                         const sessionId = await saveSession({
                             problemId,
-                            problemTitle: problem?.title || `Problem ${problemId}`,
+                            problemTitle: sessionTitle,
                             difficulty,
                             transcript: transcriptString,
                             evidence,
@@ -303,7 +329,7 @@ export default function PracticeSessionPage() {
         } catch (error) {
             console.error("Failed to end call:", error);
         }
-    }, [conversation, problemId, problem, difficulty, callDuration, router, saveSession]);
+    }, [conversation, problemId, problem, focusedRole, difficulty, callDuration, router, saveSession]);
 
     const formatDuration = (seconds: number) => {
         const m = Math.floor(seconds / 60)
@@ -432,7 +458,13 @@ export default function PracticeSessionPage() {
                         </button>
                         {/* Back button */}
                         <button
-                            onClick={() => router.push("/practice")}
+                            onClick={() =>
+                                router.push(
+                                    focusedRole
+                                        ? `/practice?focusRole=${encodeURIComponent(focusedRole.id)}`
+                                        : "/practice"
+                                )
+                            }
                             className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-light)] hover:text-white"
                         >
                             {Icons.back}
@@ -444,6 +476,7 @@ export default function PracticeSessionPage() {
                             </h1>
                             <p className="text-xs text-[var(--text-muted)]">
                                 {problem.category} · {difficultyLabels[difficulty]}
+                                {focusedRole ? ` · ${focusedRole.role}` : ""}
                             </p>
                         </div>
                     </div>
@@ -543,6 +576,24 @@ export default function PracticeSessionPage() {
                                             ? "Setting up your practice session..."
                                             : problem.description}
                                 </p>
+
+                                {focusedRole && (
+                                    <div className="mb-6 w-full max-w-xl rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-left">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
+                                            Role Focus
+                                        </p>
+                                        <p className="mt-1 text-sm font-semibold text-white">
+                                            {focusedRole.role} · {focusedRole.domain}
+                                        </p>
+                                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                                            {focusedRole.aspiration}
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-[var(--text-muted)]/90">
+                                            {focusedRole.postings.length} linked posting
+                                            {focusedRole.postings.length === 1 ? "" : "s"}
+                                        </p>
+                                    </div>
+                                )}
 
                                 {/* Error */}
                                 {errorMessage && (

@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { problems, type Difficulty } from "@/lib/problems";
+import {
+    loadRoleTargetsFromStorage,
+    loadSelectedRoleTargetId,
+    saveSelectedRoleTargetId,
+    type RoleTarget,
+} from "@/lib/roleTargets";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -89,9 +95,13 @@ const difficultyMeta: Record<
 
 export default function PracticeListPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const focusRoleFromQuery = searchParams.get("focusRole");
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [roleTargets, setRoleTargets] = useState<RoleTarget[]>([]);
+    const [focusedRoleId, setFocusedRoleId] = useState<string | null>(null);
     // Per-card difficulty selection: { problemId: difficulty }
     const [selectedDifficulty, setSelectedDifficulty] = useState<
         Record<string, Difficulty>
@@ -114,6 +124,45 @@ export default function PracticeListPage() {
     const handleLogout = () => {
         localStorage.removeItem("iaso_ai_auth");
         router.push("/login");
+    };
+
+    useEffect(() => {
+        if (!authenticated) return;
+
+        const storedTargets = loadRoleTargetsFromStorage();
+        setRoleTargets(storedTargets);
+
+        const requestedFocus = focusRoleFromQuery || loadSelectedRoleTargetId();
+        if (requestedFocus && storedTargets.some((target) => target.id === requestedFocus)) {
+            setFocusedRoleId(requestedFocus);
+            saveSelectedRoleTargetId(requestedFocus);
+        } else {
+            setFocusedRoleId(null);
+            if (focusRoleFromQuery) {
+                router.replace("/practice");
+            }
+        }
+    }, [authenticated, focusRoleFromQuery, router]);
+
+    const focusedRole = useMemo(
+        () => roleTargets.find((target) => target.id === focusedRoleId) ?? null,
+        [roleTargets, focusedRoleId]
+    );
+
+    const setFocusRole = (roleId: string | null) => {
+        setFocusedRoleId(roleId);
+        saveSelectedRoleTargetId(roleId);
+        if (roleId) {
+            router.replace(`/practice?focusRole=${encodeURIComponent(roleId)}`);
+        } else {
+            router.replace("/practice");
+        }
+    };
+
+    const buildPracticePath = (problemId: string, difficulty: Difficulty) => {
+        const basePath = `/practice/${problemId}?difficulty=${difficulty}`;
+        if (!focusedRoleId) return basePath;
+        return `${basePath}&focusRole=${encodeURIComponent(focusedRoleId)}`;
     };
 
     if (checking || !authenticated) {
@@ -212,13 +261,80 @@ export default function PracticeListPage() {
                             </p>
                         </div>
                     </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--accent)] text-sm font-bold text-white">
-                        A
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.push("/roles")}
+                            className="cursor-pointer rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--surface-light)]"
+                        >
+                            Scout Roles
+                        </button>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--accent)] text-sm font-bold text-white">
+                            A
+                        </div>
                     </div>
                 </header>
 
                 {/* Content */}
                 <div className="p-6">
+                    <div className="glass-card mb-6 p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 className="text-base font-semibold text-white">Roles To Practice For</h2>
+                                <p className="text-xs text-[var(--text-muted)]">
+                                    Use job-scouted roles to focus your interview preparation.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => router.push("/roles")}
+                                className="cursor-pointer rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--primary-light)]"
+                            >
+                                Manage Role Workflow
+                            </button>
+                        </div>
+
+                        {roleTargets.length === 0 ? (
+                            <div className="mt-4 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)]/40 px-4 py-3 text-xs text-[var(--text-muted)]">
+                                No role targets saved yet. Create one in the role scout workflow before starting practice.
+                            </div>
+                        ) : (
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                {roleTargets.slice(0, 6).map((target) => (
+                                    <button
+                                        key={target.id}
+                                        onClick={() => setFocusRole(target.id)}
+                                        className={`cursor-pointer rounded-xl border p-3 text-left transition-all duration-200 ${focusedRoleId === target.id
+                                                ? "border-[var(--primary-light)] bg-[var(--primary)]/15"
+                                                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-hover)]"
+                                            }`}
+                                    >
+                                        <p className="text-sm font-semibold text-white">{target.role}</p>
+                                        <p className="text-xs text-[var(--text-muted)]">{target.domain}</p>
+                                        <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                                            {target.postings.length} posting{target.postings.length === 1 ? "" : "s"}
+                                        </p>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {focusedRole && (
+                            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent-green)]/40 bg-[var(--accent-green)]/10 px-3 py-2">
+                                <span className="text-xs font-semibold text-[var(--accent-green)]">
+                                    Focused Role:
+                                </span>
+                                <span className="text-xs text-white">
+                                    {focusedRole.role} ({focusedRole.domain})
+                                </span>
+                                <button
+                                    onClick={() => setFocusRole(null)}
+                                    className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:border-[var(--border-hover)]"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Problem cards grid */}
                     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
                         {problems.map((problem, idx) => {
@@ -311,11 +427,7 @@ export default function PracticeListPage() {
                                             </span>
                                         </div>
                                         <button
-                                            onClick={() =>
-                                                router.push(
-                                                    `/practice/${problem.id}?difficulty=${diff}`
-                                                )
-                                            }
+                                            onClick={() => router.push(buildPracticePath(problem.id, diff))}
                                             className="flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--primary)]/20 px-3 py-1.5 text-xs font-semibold text-[var(--primary-light)] transition-all duration-200 hover:bg-[var(--primary)]/30 hover:scale-105"
                                         >
                                             Start

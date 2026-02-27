@@ -1,0 +1,4 @@
+interface:
+  display_name: "Practice Skill Researcher"
+  short_description: "Research practice topics and build coaching-ready skill packs"
+  default_prompt: "When a user gives a practice task, research first with Tavily and then produce a comprehensive skill package for that practice."

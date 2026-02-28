@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useConversation } from "@elevenlabs/react";
 import { getProblemById, type Difficulty } from "@/lib/problems";
@@ -119,6 +119,9 @@ type ElevenLabsSessionResponse = {
     agentId?: string;
     signedUrl?: string;
     configuredKey?: string;
+    userId?: string;
+    dynamicVariables?: Record<string, string | number | boolean>;
+    contextualUpdate?: string;
     error?: string;
 };
 
@@ -236,6 +239,20 @@ export default function PracticeSessionPage() {
         setFocusedRole(matchingRole);
     }, [authenticated, focusRoleIdFromQuery]);
 
+    const focusedPrimaryPosting = useMemo(() => {
+        if (!focusedRole) {
+            return null;
+        }
+
+        return (
+            focusedRole.postings.find(
+                (posting) => posting.id === focusedRole.primaryPostingId
+            ) ||
+            focusedRole.postings[0] ||
+            null
+        );
+    }, [focusedRole]);
+
     // Call timer
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -267,6 +284,29 @@ export default function PracticeSessionPage() {
                 body: JSON.stringify({
                     problemId,
                     difficulty,
+                    userId: getClientUserId(),
+                    roleContext: focusedRole
+                        ? {
+                              id: focusedRole.id,
+                              role: focusedRole.role,
+                              domain: focusedRole.domain,
+                              aspiration: focusedRole.aspiration,
+                              skillFocus: focusedRole.skillFocus,
+                              notes: focusedRole.notes,
+                              primaryPostingId: focusedRole.primaryPostingId,
+                              postings: focusedRole.postings.slice(0, 10).map((posting) => ({
+                                  id: posting.id,
+                                  title: posting.title,
+                                  company: posting.company,
+                                  location: posting.location,
+                                  url: posting.url,
+                                  source: posting.source,
+                                  summary: posting.summary,
+                                  jobDescription: posting.jobDescription,
+                                  skills: posting.skills,
+                              })),
+                          }
+                        : null,
                 }),
             });
 
@@ -292,16 +332,24 @@ export default function PracticeSessionPage() {
                 conversationId = await conversation.startSession({
                     signedUrl: configPayload.signedUrl,
                     connectionType: "websocket",
+                    userId: configPayload.userId || getClientUserId(),
+                    dynamicVariables: configPayload.dynamicVariables,
                 });
             } else if (configPayload.agentId) {
                 conversationId = await conversation.startSession({
                     agentId: configPayload.agentId,
                     connectionType: "websocket",
+                    userId: configPayload.userId || getClientUserId(),
+                    dynamicVariables: configPayload.dynamicVariables,
                 });
             } else {
                 throw new Error(
                     "Missing interviewer agent configuration for realtime call."
                 );
+            }
+
+            if (configPayload.contextualUpdate) {
+                conversation.sendContextualUpdate(configPayload.contextualUpdate);
             }
 
             console.log("Conversation started:", conversationId);
@@ -320,7 +368,7 @@ export default function PracticeSessionPage() {
                 setErrorMessage(msg);
             }
         }
-    }, [conversation, difficulty, problemId]);
+    }, [conversation, difficulty, focusedRole, problemId]);
 
     const uploadToModulate = useCallback(async () => {
         if (!modulateFile) {
@@ -485,6 +533,8 @@ export default function PracticeSessionPage() {
                 createdAt,
             });
 
+            const primaryPosting = focusedPrimaryPosting;
+
             try {
                 const memoryResponse = await fetch("/api/memory/upsert", {
                     method: "POST",
@@ -500,6 +550,17 @@ export default function PracticeSessionPage() {
                         duration: callDuration,
                         createdAt,
                         analysis,
+                        focusRole: focusedRole?.role || "",
+                        focusDomain: focusedRole?.domain || "",
+                        focusAspiration: focusedRole?.aspiration || "",
+                        focusSkills: focusedRole?.skillFocus || [],
+                        focusNotes: focusedRole?.notes || "",
+                        focusPostingTitle: primaryPosting?.title || "",
+                        focusPostingCompany: primaryPosting?.company || "",
+                        focusPostingUrl: primaryPosting?.url || "",
+                        focusPostingSummary: primaryPosting?.summary || "",
+                        focusPostingJobDescription:
+                            primaryPosting?.jobDescription || "",
                     }),
                 });
 
@@ -520,6 +581,7 @@ export default function PracticeSessionPage() {
         callDuration,
         conversation,
         difficulty,
+        focusedPrimaryPosting,
         focusedRole,
         problem,
         problemId,
@@ -783,6 +845,17 @@ export default function PracticeSessionPage() {
                                         <p className="mt-1 text-xs text-[var(--text-muted)]">
                                             {focusedRole.aspiration}
                                         </p>
+                                        {focusedRole.skillFocus.length > 0 && (
+                                            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                                Skills: {focusedRole.skillFocus.join(", ")}
+                                            </p>
+                                        )}
+                                        {focusedPrimaryPosting && (
+                                            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                                Primary opening: {focusedPrimaryPosting.title} at{" "}
+                                                {focusedPrimaryPosting.company}
+                                            </p>
+                                        )}
                                         <p className="mt-1 text-[11px] text-[var(--text-muted)]/90">
                                             {focusedRole.postings.length} linked posting
                                             {focusedRole.postings.length === 1 ? "" : "s"}

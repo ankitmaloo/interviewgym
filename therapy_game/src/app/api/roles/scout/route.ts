@@ -11,6 +11,27 @@ type ScoutRequest = RoleScoutInput & {
     maxResults?: number;
 };
 
+function normalizeSkillFocus(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) =>
+                typeof item === "string" ? item.trim().toLowerCase() : ""
+            )
+            .filter(Boolean)
+            .slice(0, 15);
+    }
+
+    if (typeof value === "string") {
+        return value
+            .split(/[,\n]+/)
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+            .slice(0, 15);
+    }
+
+    return [];
+}
+
 function parseBody(value: unknown): ScoutRequest | null {
     if (!value || typeof value !== "object") {
         return null;
@@ -29,6 +50,7 @@ function parseBody(value: unknown): ScoutRequest | null {
         role: input.role,
         domain: input.domain,
         aspiration: input.aspiration,
+        skillFocus: normalizeSkillFocus(input.skillFocus),
         location: typeof input.location === "string" ? input.location : "",
         searchQuery: typeof input.searchQuery === "string" ? input.searchQuery : "",
         notes: typeof input.notes === "string" ? input.notes : "",
@@ -43,6 +65,9 @@ function buildSearchQuery(input: ScoutRequest): string {
     const parts = [
         input.searchQuery?.trim(),
         `${input.role} ${input.domain} jobs`,
+        input.skillFocus && input.skillFocus.length > 0
+            ? `required skills: ${input.skillFocus.join(", ")}`
+            : "",
         input.location?.trim(),
         input.notes?.trim(),
     ].filter((item): item is string => Boolean(item));

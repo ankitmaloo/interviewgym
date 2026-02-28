@@ -17,8 +17,10 @@ Open `http://localhost:3000`.
 
 A new pre-practice workflow is available at `/roles`:
 
-- Define target job roles (role, domain, aspiration, location, query, notes)
+- Define target job roles (role, domain, aspiration, skill focus, location, query, notes)
 - Save delivered postings for each target role
+- Pick one posting as primary JD context for interviews
+- Run web listening across all active roles via API (`/api/roles/listen`)
 - Mark a role as focus, then open `/practice` with that role context
 
 The role data is stored locally in browser storage using:
@@ -41,8 +43,8 @@ Setup and data model details are documented in:
 ## New Stack
 
 - `Neo4j`: interview memory graph (`/api/memory/upsert`, `/api/memory/summary`)
-- `Tavily`: web search for role scouting (`/api/roles/scout`)
-- `Yutori`: posting curation over Tavily results (`/api/roles/scout`)
+- `Tavily`: web search for role scouting (`/api/roles/scout`, `/api/roles/listen`)
+- `Yutori`: posting curation over Tavily results (`/api/roles/scout`, `/api/roles/listen`)
 - `ElevenLabs`: realtime websocket interviewer conversation (`/api/voice/elevenlabs/session`)
 - `Modulate`: async audio upload utilities (`/api/voice/upload`)
 
@@ -87,5 +89,9 @@ MODULATE_API_KEY=<key>
 
 - Live interview conversation uses ElevenLabs over websocket.
 - Session setup is served by `/api/voice/elevenlabs/session` and prefers signed websocket URLs when `ELEVENLABS_API_KEY` is present.
-- Interviewer persona comes from scenario+difficulty agent IDs.
+- Interviewer persona comes from scenario+difficulty agent IDs, plus runtime context from:
+  - focused role + skill focus
+  - selected primary opening/JD
+  - Neo4j strengths/weaknesses summary
+- Runtime context is injected through ElevenLabs `dynamicVariables` and `contextualUpdate`.
 - Modulate is intentionally not used for live conversation; it is optional async upload/review in the notes panel.

@@ -8,6 +8,8 @@ export type RolePosting = {
     url: string;
     source: string;
     summary: string;
+    jobDescription: string;
+    skills: string[];
     addedAt: number;
 };
 
@@ -16,10 +18,12 @@ export type RoleTarget = {
     role: string;
     domain: string;
     aspiration: string;
+    skillFocus: string[];
     location: string;
     searchQuery: string;
     notes: string;
     status: RoleTargetStatus;
+    primaryPostingId: string | null;
     postings: RolePosting[];
     createdAt: number;
     updatedAt: number;
@@ -34,6 +38,29 @@ function hasBrowserStorage(): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
+}
+
+function normalizeSkillList(value: unknown): string[] {
+    if (!value) {
+        return [];
+    }
+
+    if (typeof value === "string") {
+        return value
+            .split(/[,\n]+/)
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+            .filter((item, index, arr) => arr.indexOf(item) === index);
+    }
+
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value
+        .map((item) => (typeof item === "string" ? item.trim().toLowerCase() : ""))
+        .filter(Boolean)
+        .filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
 function normalizePosting(value: unknown): RolePosting | null {
@@ -60,6 +87,9 @@ function normalizePosting(value: unknown): RolePosting | null {
         url: value.url,
         source: value.source,
         summary: value.summary,
+        jobDescription:
+            typeof value.jobDescription === "string" ? value.jobDescription : "",
+        skills: normalizeSkillList(value.skills),
         addedAt: value.addedAt,
     };
 }
@@ -90,16 +120,24 @@ function normalizeRoleTarget(value: unknown): RoleTarget | null {
     const postings = value.postings
         .map((posting) => normalizePosting(posting))
         .filter((posting): posting is RolePosting => posting !== null);
+    const primaryPostingId =
+        typeof value.primaryPostingId === "string" ? value.primaryPostingId : null;
+    const normalizedPrimaryPostingId =
+        primaryPostingId && postings.some((posting) => posting.id === primaryPostingId)
+            ? primaryPostingId
+            : null;
 
     return {
         id: value.id,
         role: value.role,
         domain: value.domain,
         aspiration: value.aspiration,
+        skillFocus: normalizeSkillList(value.skillFocus),
         location: value.location,
         searchQuery: value.searchQuery,
         notes: value.notes,
         status: value.status,
+        primaryPostingId: normalizedPrimaryPostingId,
         postings,
         createdAt: value.createdAt,
         updatedAt: value.updatedAt,
@@ -157,6 +195,7 @@ export function buildRoleTarget(input: {
     role: string;
     domain: string;
     aspiration: string;
+    skillFocus?: string[] | string;
     location?: string;
     searchQuery?: string;
     notes?: string;
@@ -168,10 +207,12 @@ export function buildRoleTarget(input: {
         role: input.role.trim(),
         domain: input.domain.trim(),
         aspiration: input.aspiration.trim(),
+        skillFocus: normalizeSkillList(input.skillFocus),
         location: (input.location || "").trim(),
         searchQuery: (input.searchQuery || "").trim(),
         notes: (input.notes || "").trim(),
         status: "active",
+        primaryPostingId: null,
         postings: [],
         createdAt: now,
         updatedAt: now,
@@ -185,6 +226,8 @@ export function buildRolePosting(input: {
     url: string;
     source?: string;
     summary?: string;
+    jobDescription?: string;
+    skills?: string[] | string;
 }): RolePosting {
     return {
         id: generateLocalId("posting"),
@@ -194,6 +237,12 @@ export function buildRolePosting(input: {
         url: input.url.trim(),
         source: (input.source || "Yutori").trim(),
         summary: (input.summary || "").trim(),
+        jobDescription: (input.jobDescription || "").trim(),
+        skills: normalizeSkillList(input.skills),
         addedAt: Date.now(),
     };
+}
+
+export function parseSkillsInput(value: string): string[] {
+    return normalizeSkillList(value);
 }

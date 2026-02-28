@@ -32,6 +32,16 @@ export type UpsertMemoryInput = {
     duration: number;
     createdAt?: number;
     analysis: AnalysisMetricInput[];
+    focusRole?: string;
+    focusDomain?: string;
+    focusAspiration?: string;
+    focusSkills?: string[];
+    focusNotes?: string;
+    focusPostingTitle?: string;
+    focusPostingCompany?: string;
+    focusPostingUrl?: string;
+    focusPostingSummary?: string;
+    focusPostingJobDescription?: string;
 };
 
 export type MemoryInsight = {
@@ -160,6 +170,18 @@ function normalizeMetrics(metrics: AnalysisMetricInput[]) {
         .filter((item) => item.metric.length > 0);
 }
 
+function normalizeFocusSkills(skills: string[] | undefined): string[] {
+    if (!Array.isArray(skills)) {
+        return [];
+    }
+
+    return skills
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
+        .filter((item, index, arr) => arr.indexOf(item) === index)
+        .slice(0, 20);
+}
+
 export async function upsertUserInterviewMemory(input: UpsertMemoryInput): Promise<{
     enabled: boolean;
     userId: string;
@@ -184,6 +206,17 @@ export async function upsertUserInterviewMemory(input: UpsertMemoryInput): Promi
             ? input.createdAt
             : Date.now();
     const metrics = normalizeMetrics(input.analysis);
+    const focusSkills = normalizeFocusSkills(input.focusSkills);
+    const focusRole = input.focusRole?.trim() || "";
+    const focusDomain = input.focusDomain?.trim() || "";
+    const focusAspiration = input.focusAspiration?.trim() || "";
+    const focusNotes = input.focusNotes?.trim() || "";
+    const focusPostingTitle = input.focusPostingTitle?.trim() || "";
+    const focusPostingCompany = input.focusPostingCompany?.trim() || "";
+    const focusPostingUrl = input.focusPostingUrl?.trim() || "";
+    const focusPostingSummary = input.focusPostingSummary?.trim() || "";
+    const focusPostingJobDescription =
+        input.focusPostingJobDescription?.trim() || "";
 
     const session = driver.session({ database: config.database });
 
@@ -202,7 +235,17 @@ export async function upsertUserInterviewMemory(input: UpsertMemoryInput): Promi
                     s.difficulty = $difficulty,
                     s.transcript = $transcript,
                     s.overallScore = $overallScore,
-                    s.duration = $duration
+                    s.duration = $duration,
+                    s.focusRole = $focusRole,
+                    s.focusDomain = $focusDomain,
+                    s.focusAspiration = $focusAspiration,
+                    s.focusSkills = $focusSkills,
+                    s.focusNotes = $focusNotes,
+                    s.focusPostingTitle = $focusPostingTitle,
+                    s.focusPostingCompany = $focusPostingCompany,
+                    s.focusPostingUrl = $focusPostingUrl,
+                    s.focusPostingSummary = $focusPostingSummary,
+                    s.focusPostingJobDescription = $focusPostingJobDescription
 
                 MERGE (u)-[:COMPLETED]->(s)
                 `,
@@ -215,9 +258,89 @@ export async function upsertUserInterviewMemory(input: UpsertMemoryInput): Promi
                     transcript: input.transcript,
                     overallScore: input.overallScore,
                     duration: input.duration,
+                    focusRole,
+                    focusDomain,
+                    focusAspiration,
+                    focusSkills,
+                    focusNotes,
+                    focusPostingTitle,
+                    focusPostingCompany,
+                    focusPostingUrl,
+                    focusPostingSummary,
+                    focusPostingJobDescription,
                     createdAt,
                 }
             );
+
+            if (focusRole || focusDomain) {
+                await tx.run(
+                    `
+                    MATCH (s:InterviewSession {id: $sessionId})
+                    MERGE (r:RoleTarget {name: $focusRole, domain: $focusDomain})
+                    ON CREATE SET r.createdAt = $createdAt
+                    SET r.aspiration = $focusAspiration,
+                        r.notes = $focusNotes,
+                        r.lastUpdatedAt = $createdAt
+                    MERGE (s)-[:TARGETED_ROLE]->(r)
+                    `,
+                    {
+                        sessionId: input.sessionId,
+                        focusRole,
+                        focusDomain,
+                        focusAspiration,
+                        focusNotes,
+                        createdAt,
+                    }
+                );
+            }
+
+            if (focusPostingTitle || focusPostingUrl) {
+                await tx.run(
+                    `
+                    MATCH (s:InterviewSession {id: $sessionId})
+                    MERGE (j:JobOpening {
+                        key: CASE
+                            WHEN $focusPostingUrl <> "" THEN $focusPostingUrl
+                            ELSE ($focusPostingTitle + "::" + $focusPostingCompany)
+                        END
+                    })
+                    ON CREATE SET j.createdAt = $createdAt
+                    SET j.title = $focusPostingTitle,
+                        j.company = $focusPostingCompany,
+                        j.url = $focusPostingUrl,
+                        j.summary = $focusPostingSummary,
+                        j.jobDescription = $focusPostingJobDescription,
+                        j.updatedAt = $createdAt
+                    MERGE (s)-[:TARGETED_OPENING]->(j)
+                    `,
+                    {
+                        sessionId: input.sessionId,
+                        focusPostingTitle,
+                        focusPostingCompany,
+                        focusPostingUrl,
+                        focusPostingSummary,
+                        focusPostingJobDescription,
+                        createdAt,
+                    }
+                );
+            }
+
+            if (focusSkills.length > 0) {
+                await tx.run(
+                    `
+                    MATCH (s:InterviewSession {id: $sessionId})
+                    UNWIND $focusSkills AS focusSkill
+                    MERGE (skill:InterviewSkill {name: focusSkill, category: "Role Focus"})
+                    ON CREATE SET skill.createdAt = $createdAt
+                    MERGE (s)-[:FOCUSES_ON]->(skill)
+                    `,
+                    {
+                        sessionId: input.sessionId,
+                        focusSkills,
+                        createdAt,
+                    }
+                );
+            }
 
             if (metrics.length > 0) {
                 await tx.run(

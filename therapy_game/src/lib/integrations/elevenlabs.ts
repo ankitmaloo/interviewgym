@@ -17,6 +17,12 @@ const VALID_DIFFICULTIES = new Set<InterviewDifficulty>([
     "hard",
 ]);
 
+const LOCKED_INTERVIEWER_AGENT_BY_PROBLEM: Record<string, string> = {
+    "2": "agent_8801kjgt3d1rekg84s1ej4ywxcjq",
+};
+const DEFAULT_FALLBACK_INTERVIEWER_AGENT =
+    "agent_8801kjgt3d1rekg84s1ej4ywxcjq";
+
 function readEnvValue(key: string): string {
     const value = process.env[key];
     return typeof value === "string" ? value.trim() : "";
@@ -61,6 +67,14 @@ export function resolveInterviewerAgentId(input: {
     problemId: string;
     difficulty: InterviewDifficulty;
 }): { agentId: string; key: string } | null {
+    const lockedAgentId = LOCKED_INTERVIEWER_AGENT_BY_PROBLEM[input.problemId];
+    if (lockedAgentId) {
+        return {
+            agentId: lockedAgentId,
+            key: `LOCKED_INTERVIEWER_AGENT_${input.problemId}`,
+        };
+    }
+
     hydrateServerEnv([
         "ELEVENLABS_",
         "NEXT_PUBLIC_INTERVIEWER_AGENT_",
@@ -75,7 +89,10 @@ export function resolveInterviewerAgentId(input: {
         }
     }
 
-    return null;
+    return {
+        agentId: DEFAULT_FALLBACK_INTERVIEWER_AGENT,
+        key: "DEFAULT_FALLBACK_INTERVIEWER_AGENT",
+    };
 }
 
 async function fetchSignedWebsocketUrl(input: {

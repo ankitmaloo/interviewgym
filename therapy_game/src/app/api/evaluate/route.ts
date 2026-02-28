@@ -13,6 +13,41 @@ type ScoreItem = {
   comments: string;
 };
 
+type PathwayContext = {
+  role?: string;
+  domain?: string;
+  aspiration?: string;
+};
+
+function readOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildPathwayLabel(payload: Record<string, unknown>): string | null {
+  const pathway =
+    payload.pathway && typeof payload.pathway === "object"
+      ? (payload.pathway as PathwayContext)
+      : null;
+
+  const role =
+    readOptionalString(pathway?.role) ?? readOptionalString(payload.focusRole);
+  const domain = readOptionalString(pathway?.domain);
+  const aspiration = readOptionalString(pathway?.aspiration);
+
+  if (role && domain) return `${role} in ${domain}`;
+  if (role) return role;
+  if (domain) return domain;
+  if (aspiration) return aspiration;
+  return null;
+}
+
+function assessment(text: string, pathwayLabel: string | null): string {
+  if (!pathwayLabel) return `Assessment: ${text}`;
+  return `Assessment for selected pathway (${pathwayLabel}): ${text}`;
+}
+
 function parseTurns(transcript: string): Turn[] {
   return transcript
     .split("\n")
@@ -50,7 +85,7 @@ function isInterviewerSpeaker(speaker: string): boolean {
   return value.includes("interviewer") || value.includes("agent");
 }
 
-function buildScores(turns: Turn[]): ScoreItem[] {
+function buildScores(turns: Turn[], pathwayLabel: string | null): ScoreItem[] {
   const candidateTurns = turns.filter((turn) => isCandidateSpeaker(turn.speaker));
   const candidateText = candidateTurns.map((turn) => turn.text).join(" ");
   const candidateTextLower = candidateText.toLowerCase();
@@ -91,86 +126,149 @@ function buildScores(turns: Turn[]): ScoreItem[] {
       metric: "Provides Context/Background",
       score: clampScore(baseCompleteness + (hasContext ? 1.2 : -1.6)),
       comments: hasContext
-        ? "Context was present in multiple turns (for example T1), which helped frame the situation clearly."
-        : "Context was limited, so the setup felt unclear in early turns such as T1.",
+        ? assessment(
+            "Situation setup included enough context to frame scope, constraints, and relevance.",
+            pathwayLabel
+          )
+        : assessment(
+            "Situation setup lacked scope, constraints, or stakeholder framing, which reduced clarity.",
+            pathwayLabel
+          ),
     },
     {
       category: "Answer Completeness",
       metric: "Explains Actions Taken",
       score: clampScore(baseCompleteness + (hasActions ? 1.3 : -2.0)),
       comments: hasActions
-        ? "You described concrete actions (for example T2), which made ownership clear."
-        : "Action details were sparse, so it was hard to understand what you specifically did (for example T2).",
+        ? assessment(
+            "Ownership and decision steps were explicit, making personal contribution clear.",
+            pathwayLabel
+          )
+        : assessment(
+            "Action detail was thin, so ownership, decisions, and execution approach were hard to verify.",
+            pathwayLabel
+          ),
     },
     {
       category: "Answer Completeness",
       metric: "States Clear Results/Outcomes",
       score: clampScore(baseCompleteness + (hasResults ? 1.2 : -2.0) + (hasNumbers ? 0.7 : 0)),
       comments: hasResults
-        ? "Results were stated (for example T3), and the outcome was understandable."
-        : "Outcomes were not clearly stated, so impact remained vague by the end of the response.",
+        ? assessment(
+            "Outcome and impact were explicit, so result quality was measurable.",
+            pathwayLabel
+          )
+        : assessment(
+            "Outcome evidence was limited, so business or team impact remained unclear.",
+            pathwayLabel
+          ),
     },
     {
       category: "Answer Completeness",
       metric: "Includes Learning/Reflection (when applicable)",
       score: clampScore(baseCompleteness + (hasLearning ? 0.8 : -1.6)),
       comments: hasLearning
-        ? "You included reflection and learning, which strengthened the close of the answer."
-        : "Reflection was limited; add what you learned or what you would do differently.",
+        ? assessment(
+            "Reflection showed learning and adjustment, strengthening long-term signal.",
+            pathwayLabel
+          )
+        : assessment(
+            "Learning signal was limited, so growth in judgment and approach was not well evidenced.",
+            pathwayLabel
+          ),
     },
     {
       category: "Response Quality & Specificity",
       metric: "Uses Specific Concrete Examples",
       score: clampScore(baseQuality + (hasActions ? 0.9 : -1.4)),
-      comments: "Concrete examples were used in parts of the transcript, but specificity can still improve with tighter details.",
+      comments: assessment(
+        "Examples were concrete in parts, but sharper operational detail would improve precision.",
+        pathwayLabel
+      ),
     },
     {
       category: "Response Quality & Specificity",
       metric: "Provides Relevant Details and Evidence",
       score: clampScore(baseQuality + (hasNumbers ? 1.0 : -1.3)),
       comments: hasNumbers
-        ? "You included measurable evidence, which improved credibility."
-        : "Try adding measurable evidence (metrics, scale, timeframe) to support your points.",
+        ? assessment(
+            "Quantified evidence improved credibility and made impact easier to evaluate.",
+            pathwayLabel
+          )
+        : assessment(
+            "Supporting evidence lacked metrics, scale, or timeframe, reducing confidence in impact.",
+            pathwayLabel
+          ),
     },
     {
       category: "Response Quality & Specificity",
       metric: "Stays On Topic and Focused",
       score: clampScore(baseQuality + (isVerbose ? -1.8 : 0.6)),
       comments: isVerbose
-        ? "Some sections ran long and reduced focus. Tighten structure to keep relevance high."
-        : "The response generally stayed on topic and was easy to follow.",
+        ? assessment(
+            "Some segments were verbose, which diluted focus on the interview question.",
+            pathwayLabel
+          )
+        : assessment(
+            "Response stayed focused on the question and maintained relevance.",
+            pathwayLabel
+          ),
     },
     {
       category: "Response Quality & Specificity",
       metric: "Answers Question Fully and Directly",
       score: clampScore(baseQuality + (isTooShort ? -1.6 : 0.7)),
       comments: isTooShort
-        ? "Coverage was brief and likely under-developed. Expand direct answer depth."
-        : "The question was answered directly with sufficient breadth for most interview contexts.",
+        ? assessment(
+            "Coverage was brief and under-developed relative to expected interview depth.",
+            pathwayLabel
+          )
+        : assessment(
+            "Question was addressed directly with adequate breadth for interview evaluation.",
+            pathwayLabel
+          ),
     },
     {
       category: "Communication & Delivery",
       metric: "Clear and Articulate",
       score: clampScore(baseCommunication + (fillerCount > 8 ? -1.5 : 0.8)),
       comments: fillerCount > 8
-        ? "Frequent filler words reduced clarity. Slow down slightly and pause between points."
-        : "Communication was clear overall with understandable phrasing.",
+        ? assessment(
+            "Frequent filler language reduced clarity and precision of delivery.",
+            pathwayLabel
+          )
+        : assessment(
+            "Delivery was clear, with understandable phrasing and articulation.",
+            pathwayLabel
+          ),
     },
     {
       category: "Communication & Delivery",
       metric: "Well-Structured with Logical Flow",
       score: clampScore(baseCommunication + (hasContext && hasActions && hasResults ? 1.0 : -1.0)),
       comments: hasContext && hasActions && hasResults
-        ? "The response showed a clear beginning-middle-end flow."
-        : "Structure was uneven. Use a simple context-action-result sequence for consistency.",
+        ? assessment(
+            "Answer followed a clear beginning-middle-end structure with logical flow.",
+            pathwayLabel
+          )
+        : assessment(
+            "Flow was uneven, and sequencing reduced interview readability.",
+            pathwayLabel
+          ),
     },
     {
       category: "Communication & Delivery",
       metric: "Concise and Appropriate Length (ideally ≤2 min)",
       score: clampScore(baseCommunication + (isVerbose ? -2.2 : 1.0)),
       comments: isVerbose
-        ? "Response length appeared excessive for interview pacing. Trim repeated details."
-        : "Length looked appropriate for interview pacing.",
+        ? assessment(
+            "Response length exceeded typical interview pacing and included avoidable repetition.",
+            pathwayLabel
+          )
+        : assessment(
+            "Length fit interview pacing and stayed within expected response windows.",
+            pathwayLabel
+          ),
     },
     {
       category: "Communication & Delivery",
@@ -178,38 +276,65 @@ function buildScores(turns: Turn[]): ScoreItem[] {
       score: clampScore(baseCommunication + (fillerCount > 8 ? -2.0 : 1.1)),
       comments:
         fillerCount > 8
-          ? "Filler words appeared often. Practice concise pauses to reduce verbal tics."
-          : "Filler words were limited and did not materially distract.",
+          ? assessment(
+              "Filler density was high enough to distract from content quality.",
+              pathwayLabel
+            )
+          : assessment(
+              "Filler usage was limited and did not materially distract from substance.",
+              pathwayLabel
+            ),
     },
     {
       category: "Professionalism & Mindset",
       metric: "Uses Positive/Constructive Framing",
       score: clampScore(baseProfessionalism + (hasPositiveFraming ? 1.0 : -1.3) + (hasNegativeLanguage ? -1.8 : 0)),
       comments: hasNegativeLanguage
-        ? "Some language may come across negatively. Reframe challenges with constructive tone."
-        : "Tone was mostly constructive and professional.",
+        ? assessment(
+            "Language included negative framing that could weaken interviewer confidence.",
+            pathwayLabel
+          )
+        : assessment(
+            "Tone remained constructive and professionally framed.",
+            pathwayLabel
+          ),
     },
     {
       category: "Professionalism & Mindset",
       metric: "Demonstrates Relevant Skills/Competencies",
       score: clampScore(baseProfessionalism + (hasActions ? 0.9 : -1.3)),
-      comments: "Competencies are visible, but you can strengthen this by naming technical and behavioral strengths explicitly.",
+      comments: assessment(
+        "Competency signal is present, but stronger explicit mapping to role-relevant strengths would improve alignment.",
+        pathwayLabel
+      ),
     },
     {
       category: "Professionalism & Mindset",
       metric: "Shows Growth and Self-Awareness",
       score: clampScore(baseProfessionalism + (hasLearning ? 1.1 : -1.4)),
       comments: hasLearning
-        ? "Growth mindset appeared clearly through reflection."
-        : "Include one explicit lesson learned to show stronger self-awareness.",
+        ? assessment(
+            "Growth and self-awareness were evidenced through reflection.",
+            pathwayLabel
+          )
+        : assessment(
+            "Self-awareness signal was limited because lessons learned were not explicit.",
+            pathwayLabel
+          ),
     },
     {
       category: "Professionalism & Mindset",
       metric: "Maintains Professional Tone",
       score: clampScore(baseProfessionalism + (hasNegativeLanguage ? -2.0 : 1.0)),
       comments: hasNegativeLanguage
-        ? "Some phrases risk sounding unprofessional. Use neutral, objective language."
-        : "Tone was professional throughout the transcript.",
+        ? assessment(
+            "Some phrasing risked sounding unprofessional for interview standards.",
+            pathwayLabel
+          )
+        : assessment(
+            "Professional tone was maintained throughout the interaction.",
+            pathwayLabel
+          ),
     },
   ];
 
@@ -261,9 +386,13 @@ function buildEvidence(turns: Turn[]) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const transcript: string | undefined = body.transcript;
+    const payload =
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>)
+        : {};
+    const transcript = readOptionalString(payload.transcript);
 
-    if (!transcript || typeof transcript !== "string") {
+    if (!transcript) {
       return NextResponse.json(
         { error: "Request body must include a `transcript` string." },
         { status: 400 }
@@ -272,7 +401,8 @@ export async function POST(request: NextRequest) {
 
     const turns = parseTurns(transcript);
     const evidence = buildEvidence(turns);
-    const scores = buildScores(turns);
+    const pathwayLabel = buildPathwayLabel(payload);
+    const scores = buildScores(turns, pathwayLabel);
 
     return NextResponse.json({ evidence, scores });
   } catch (err: unknown) {

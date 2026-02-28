@@ -4,12 +4,17 @@ import {
     createElevenLabsInterviewSessionConfig,
     isInterviewDifficulty,
 } from "@/lib/integrations/elevenlabs";
+import { buildInterviewContext } from "@/lib/interviewContext";
+import { getUserMemorySummary } from "@/lib/memory/neo4j";
+import { normalizeUserId } from "@/lib/userIdentity";
 
 export const runtime = "nodejs";
 
 type SessionBody = {
     problemId: string;
     difficulty: string;
+    userId?: string | null;
+    roleContext?: unknown;
 };
 
 function parseBody(value: unknown): SessionBody | null {
@@ -28,6 +33,11 @@ function parseBody(value: unknown): SessionBody | null {
     return {
         problemId: payload.problemId,
         difficulty: payload.difficulty.toLowerCase(),
+        userId:
+            typeof payload.userId === "string" || payload.userId === null
+                ? payload.userId
+                : undefined,
+        roleContext: payload.roleContext,
     };
 }
 
@@ -56,7 +66,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (!getProblemById(body.problemId)) {
+        const problem = getProblemById(body.problemId);
+        if (!problem) {
             return NextResponse.json(
                 {
                     ok: false,
@@ -72,11 +83,38 @@ export async function POST(request: NextRequest) {
             difficulty: body.difficulty,
         });
 
+        const normalizedUserId = normalizeUserId(body.userId);
+        let memorySummary = null;
+        try {
+            memorySummary = await getUserMemorySummary(normalizedUserId);
+        } catch (error) {
+            console.warn(
+                "[voice/elevenlabs/session] memory summary unavailable:",
+                error
+            );
+        }
+
+        const interviewContext = buildInterviewContext({
+            problemId: body.problemId,
+            problemTitle: problem.title,
+            problemDescription: problem.description,
+            problemCategory: problem.category,
+            difficulty: body.difficulty,
+            roleContext: body.roleContext,
+            memorySummary,
+        });
+
         return NextResponse.json({
             ok: true,
             provider: "elevenlabs",
             problemId: body.problemId,
             difficulty: body.difficulty,
+            userId: normalizedUserId,
+            dynamicVariables: interviewContext.dynamicVariables,
+            contextualUpdate: interviewContext.contextualUpdate,
+            roleContext: interviewContext.roleContext,
+            primaryOpening: interviewContext.primaryPosting,
+            memoryEnabled: memorySummary?.enabled ?? false,
             ...config,
         });
     } catch (error) {

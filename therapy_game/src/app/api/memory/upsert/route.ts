@@ -17,7 +17,42 @@ type UpsertBody = {
     duration: number;
     createdAt?: number;
     analysis: AnalysisMetricInput[];
+    focusRole?: string;
+    focusDomain?: string;
+    focusAspiration?: string;
+    focusSkills?: string[];
+    focusNotes?: string;
+    focusPostingTitle?: string;
+    focusPostingCompany?: string;
+    focusPostingUrl?: string;
+    focusPostingSummary?: string;
+    focusPostingJobDescription?: string;
 };
+
+function normalizeString(value: unknown): string {
+    return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSkills(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) =>
+                typeof item === "string" ? item.trim().toLowerCase() : ""
+            )
+            .filter(Boolean)
+            .slice(0, 20);
+    }
+
+    if (typeof value === "string") {
+        return value
+            .split(/[,\n]+/)
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+            .slice(0, 20);
+    }
+
+    return [];
+}
 
 function isMetric(value: unknown): value is AnalysisMetricInput {
     if (!value || typeof value !== "object") {
@@ -87,6 +122,18 @@ function parseBody(body: unknown): UpsertBody | null {
         duration,
         createdAt,
         analysis,
+        focusRole: normalizeString(payload.focusRole),
+        focusDomain: normalizeString(payload.focusDomain),
+        focusAspiration: normalizeString(payload.focusAspiration),
+        focusSkills: normalizeSkills(payload.focusSkills),
+        focusNotes: normalizeString(payload.focusNotes),
+        focusPostingTitle: normalizeString(payload.focusPostingTitle),
+        focusPostingCompany: normalizeString(payload.focusPostingCompany),
+        focusPostingUrl: normalizeString(payload.focusPostingUrl),
+        focusPostingSummary: normalizeString(payload.focusPostingSummary),
+        focusPostingJobDescription: normalizeString(
+            payload.focusPostingJobDescription
+        ),
     };
 }
 

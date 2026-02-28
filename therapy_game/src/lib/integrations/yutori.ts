@@ -5,6 +5,7 @@ export type RoleScoutInput = {
     role: string;
     domain: string;
     aspiration: string;
+    skillFocus?: string[];
     location?: string;
     searchQuery?: string;
     notes?: string;
@@ -17,6 +18,8 @@ export type PostingCandidate = {
     url: string;
     source: string;
     summary: string;
+    jobDescription: string;
+    skills: string[];
 };
 
 function inferCompanyFromTitle(title: string): string {
@@ -43,10 +46,74 @@ function summarizeSnippet(snippet: string, fallback: string): string {
     return `${cleaned.slice(0, 217)}...`;
 }
 
+const SKILL_PATTERNS: Array<{ label: string; regex: RegExp }> = [
+    { label: "typescript", regex: /\btypescript\b/i },
+    { label: "javascript", regex: /\bjavascript\b/i },
+    { label: "python", regex: /\bpython\b/i },
+    { label: "java", regex: /\bjava\b/i },
+    { label: "go", regex: /\b(golang|go)\b/i },
+    { label: "node.js", regex: /\b(node|node\.js)\b/i },
+    { label: "react", regex: /\breact\b/i },
+    { label: "next.js", regex: /\bnext(\.js)?\b/i },
+    { label: "aws", regex: /\baws\b/i },
+    { label: "gcp", regex: /\bgcp|google cloud\b/i },
+    { label: "azure", regex: /\bazure\b/i },
+    { label: "kubernetes", regex: /\bkubernetes|k8s\b/i },
+    { label: "docker", regex: /\bdocker\b/i },
+    { label: "terraform", regex: /\bterraform\b/i },
+    { label: "sql", regex: /\bsql\b/i },
+    { label: "postgresql", regex: /\bpostgres(ql)?\b/i },
+    { label: "mongodb", regex: /\bmongodb\b/i },
+    { label: "redis", regex: /\bredis\b/i },
+    { label: "system design", regex: /\bsystem design\b/i },
+    { label: "distributed systems", regex: /\bdistributed systems?\b/i },
+    { label: "microservices", regex: /\bmicroservices?\b/i },
+    { label: "api design", regex: /\b(api design|rest api|graphql)\b/i },
+    { label: "data structures", regex: /\bdata structures?\b/i },
+    { label: "algorithms", regex: /\balgorithms?\b/i },
+    { label: "communication", regex: /\bcommunication\b/i },
+    { label: "leadership", regex: /\bleadership\b/i },
+    { label: "stakeholder management", regex: /\bstakeholder\b/i },
+];
+
+function extractSkillsFromText(text: string): string[] {
+    if (!text.trim()) {
+        return [];
+    }
+
+    return SKILL_PATTERNS.filter((pattern) => pattern.regex.test(text)).map(
+        (pattern) => pattern.label
+    );
+}
+
+function deriveSkillsFromTavily(input: {
+    roleContext: RoleScoutInput;
+    results: TavilyResult[];
+}): string[] {
+    const seedSkills = Array.isArray(input.roleContext.skillFocus)
+        ? input.roleContext.skillFocus
+              .map((item) => item.trim().toLowerCase())
+              .filter(Boolean)
+        : [];
+
+    const discovered = input.results.flatMap((result) =>
+        extractSkillsFromText(`${result.title}\n${result.content}`)
+    );
+
+    return [...seedSkills, ...discovered]
+        .filter((item, index, arr) => arr.indexOf(item) === index)
+        .slice(0, 12);
+}
+
 function fallbackCuration(
     roleContext: RoleScoutInput,
     results: TavilyResult[]
 ): PostingCandidate[] {
+    const normalizedSkills = deriveSkillsFromTavily({
+        roleContext,
+        results,
+    });
+
     return results.slice(0, 8).map((result) => ({
         title: result.title,
         company: inferCompanyFromTitle(result.title),
@@ -57,6 +124,11 @@ function fallbackCuration(
             result.content,
             `${roleContext.role} opportunity aligned to ${roleContext.domain}.`
         ),
+        jobDescription: summarizeSnippet(
+            result.content,
+            `${roleContext.role} role aligned with ${roleContext.aspiration}.`
+        ),
+        skills: normalizedSkills,
     }));
 }
 
@@ -101,6 +173,10 @@ export async function curatePostingsWithYutori(input: {
 
     const payload = (await response.json()) as Record<string, unknown>;
     const items = Array.isArray(payload.postings) ? payload.postings : [];
+    const tavilyDerivedSkills = deriveSkillsFromTavily({
+        roleContext: input.roleContext,
+        results: input.tavilyResults,
+    });
 
     const postings = items
         .map((item) => {
@@ -138,6 +214,28 @@ export async function curatePostingsWithYutori(input: {
                               `${input.roleContext.role} opportunity curated by Yutori.`
                           )
                         : `${input.roleContext.role} opportunity curated by Yutori.`,
+                jobDescription:
+                    typeof candidate.jobDescription === "string"
+                        ? summarizeSnippet(
+                              candidate.jobDescription,
+                              `${input.roleContext.role} role description from Yutori.`
+                          )
+                        : typeof candidate.summary === "string"
+                          ? summarizeSnippet(
+                                candidate.summary,
+                                `${input.roleContext.role} role description from Yutori.`
+                            )
+                          : "",
+                skills: Array.isArray(candidate.skills)
+                    ? candidate.skills
+                          .map((skill) =>
+                              typeof skill === "string"
+                                  ? skill.trim().toLowerCase()
+                                  : ""
+                          )
+                          .filter(Boolean)
+                          .slice(0, 12)
+                    : tavilyDerivedSkills,
             };
         })
         .filter((item): item is PostingCandidate => item !== null);

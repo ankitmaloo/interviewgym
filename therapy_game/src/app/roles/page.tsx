@@ -7,6 +7,7 @@ import {
     buildRoleTarget,
     loadRoleTargetsFromStorage,
     loadSelectedRoleTargetId,
+    parseSkillsInput,
     saveRoleTargetsToStorage,
     saveSelectedRoleTargetId,
     type RoleTarget,
@@ -17,6 +18,7 @@ type RoleFormState = {
     role: string;
     domain: string;
     aspiration: string;
+    skillFocus: string;
     location: string;
     searchQuery: string;
     notes: string;
@@ -29,6 +31,8 @@ type PostingDraft = {
     url: string;
     source: string;
     summary: string;
+    jobDescription: string;
+    skills: string;
 };
 
 type ScoutPosting = {
@@ -38,6 +42,8 @@ type ScoutPosting = {
     url: string;
     source: string;
     summary: string;
+    jobDescription?: string;
+    skills?: string[];
 };
 
 type ScoutResponse = {
@@ -49,10 +55,24 @@ type ScoutResponse = {
     error?: string;
 };
 
+type ListenResponse = {
+    ok: boolean;
+    roles?: Array<{
+        roleId: string;
+        ok: boolean;
+        provider?: "yutori" | "fallback";
+        providerNotes?: string;
+        postings?: ScoutPosting[];
+        error?: string;
+    }>;
+    error?: string;
+};
+
 const emptyRoleForm: RoleFormState = {
     role: "",
     domain: "",
     aspiration: "",
+    skillFocus: "",
     location: "",
     searchQuery: "",
     notes: "",
@@ -65,6 +85,8 @@ const emptyPostingDraft: PostingDraft = {
     url: "",
     source: "Yutori",
     summary: "",
+    jobDescription: "",
+    skills: "",
 };
 
 const statusLabels: Record<RoleTargetStatus, string> = {
@@ -89,6 +111,13 @@ function normalizeUrl(url: string): string {
     return `https://${trimmed}`;
 }
 
+function truncateText(value: string, limit = 280): string {
+    const normalized = value.trim().replace(/\s+/g, " ");
+    if (!normalized) return "";
+    if (normalized.length <= limit) return normalized;
+    return `${normalized.slice(0, limit - 3)}...`;
+}
+
 export default function RolesPage() {
     const router = useRouter();
 
@@ -101,6 +130,7 @@ export default function RolesPage() {
     const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
     const [postingDrafts, setPostingDrafts] = useState<Record<string, PostingDraft>>({});
     const [scoutingRoleId, setScoutingRoleId] = useState<string | null>(null);
+    const [isListeningAll, setIsListeningAll] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -226,6 +256,7 @@ export default function RolesPage() {
         const posting = buildRolePosting({
             ...draft,
             url: normalizeUrl(draft.url),
+            skills: parseSkillsInput(draft.skills),
         });
 
         setTargets((prev) =>
@@ -234,6 +265,7 @@ export default function RolesPage() {
                     ? {
                         ...target,
                         postings: [posting, ...target.postings],
+                        primaryPostingId: target.primaryPostingId || posting.id,
                         updatedAt: Date.now(),
                     }
                     : target
@@ -245,6 +277,21 @@ export default function RolesPage() {
             [targetId]: emptyPostingDraft,
         }));
         setSuccessMessage("Job posting added to this role target.");
+    };
+
+    const handleSetPrimaryPosting = (targetId: string, postingId: string) => {
+        setTargets((prev) =>
+            prev.map((target) =>
+                target.id === targetId
+                    ? {
+                        ...target,
+                        primaryPostingId: postingId,
+                        updatedAt: Date.now(),
+                    }
+                    : target
+            )
+        );
+        setSuccessMessage("Selected this opening as primary JD context for interviews.");
     };
 
     const handleScoutRole = async (target: RoleTarget) => {
@@ -262,6 +309,7 @@ export default function RolesPage() {
                     role: target.role,
                     domain: target.domain,
                     aspiration: target.aspiration,
+                    skillFocus: target.skillFocus,
                     location: target.location,
                     searchQuery: target.searchQuery,
                     notes: target.notes,
@@ -340,6 +388,11 @@ export default function RolesPage() {
                                         ? "Yutori"
                                         : "Tavily via Yutori"),
                                 summary: candidate.summary?.trim() || "",
+                                jobDescription:
+                                    candidate.jobDescription?.trim() ||
+                                    candidate.summary?.trim() ||
+                                    "",
+                                skills: candidate.skills || [],
                             })
                         );
                         return acc;
@@ -354,6 +407,8 @@ export default function RolesPage() {
                     return {
                         ...currentTarget,
                         postings: [...additions, ...currentTarget.postings],
+                        primaryPostingId:
+                            currentTarget.primaryPostingId || additions[0]?.id || null,
                         updatedAt: Date.now(),
                     };
                 })
@@ -388,6 +443,166 @@ export default function RolesPage() {
         }
     };
 
+    const handleListenAllRoles = async () => {
+        setErrorMessage(null);
+        setSuccessMessage(null);
+
+        const activeTargets = targets.filter((target) => target.status === "active");
+        if (activeTargets.length === 0) {
+            setErrorMessage("No active roles to scout. Mark at least one role as Active.");
+            return;
+        }
+
+        setIsListeningAll(true);
+
+        try {
+            const response = await fetch("/api/roles/listen", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    maxResults: 8,
+                    roles: activeTargets.map((target) => ({
+                        roleId: target.id,
+                        role: target.role,
+                        domain: target.domain,
+                        aspiration: target.aspiration,
+                        skillFocus: target.skillFocus,
+                        location: target.location,
+                        searchQuery: target.searchQuery,
+                        notes: target.notes,
+                    })),
+                }),
+            });
+
+            const payload = (await response
+                .json()
+                .catch(() => null)) as ListenResponse | null;
+
+            if (!response.ok || !payload?.ok) {
+                setErrorMessage(
+                    payload?.error || `Listen request failed (${response.status}).`
+                );
+                return;
+            }
+
+            const results = Array.isArray(payload.roles) ? payload.roles : [];
+            const resultByRoleId = new Map(results.map((item) => [item.roleId, item]));
+            const failedRoles = results.filter((item) => !item.ok).length;
+
+            let addedCount = 0;
+            let duplicateCount = 0;
+            let rolesWithAdditions = 0;
+
+            setTargets((prev) =>
+                prev.map((currentTarget) => {
+                    const roleResult = resultByRoleId.get(currentTarget.id);
+                    const incomingPostings = Array.isArray(roleResult?.postings)
+                        ? roleResult.postings
+                        : [];
+
+                    if (!incomingPostings.length) {
+                        return currentTarget;
+                    }
+
+                    const seenUrls = new Set(
+                        currentTarget.postings.map((posting) =>
+                            normalizeUrl(posting.url).toLowerCase()
+                        )
+                    );
+
+                    const additions = incomingPostings.reduce<
+                        ReturnType<typeof buildRolePosting>[]
+                    >((acc, candidate) => {
+                        const title = candidate.title?.trim() || "";
+                        const company = candidate.company?.trim() || "";
+                        const normalized = normalizeUrl(candidate.url || "");
+                        const key = normalized.toLowerCase();
+
+                        if (!title || !company || !normalized) {
+                            return acc;
+                        }
+
+                        if (seenUrls.has(key)) {
+                            duplicateCount += 1;
+                            return acc;
+                        }
+
+                        seenUrls.add(key);
+                        acc.push(
+                            buildRolePosting({
+                                title,
+                                company,
+                                location:
+                                    candidate.location?.trim() ||
+                                    currentTarget.location ||
+                                    "",
+                                url: normalized,
+                                source:
+                                    candidate.source?.trim() ||
+                                    (roleResult?.provider === "yutori"
+                                        ? "Yutori"
+                                        : "Tavily via Yutori"),
+                                summary: candidate.summary?.trim() || "",
+                                jobDescription:
+                                    candidate.jobDescription?.trim() ||
+                                    candidate.summary?.trim() ||
+                                    "",
+                                skills: candidate.skills || [],
+                            })
+                        );
+                        return acc;
+                    }, []);
+
+                    if (additions.length === 0) {
+                        return currentTarget;
+                    }
+
+                    addedCount += additions.length;
+                    rolesWithAdditions += 1;
+
+                    return {
+                        ...currentTarget,
+                        postings: [...additions, ...currentTarget.postings],
+                        primaryPostingId:
+                            currentTarget.primaryPostingId || additions[0]?.id || null,
+                        updatedAt: Date.now(),
+                    };
+                })
+            );
+
+            if (addedCount === 0) {
+                const failureNote =
+                    failedRoles > 0
+                        ? ` ${failedRoles} role${failedRoles === 1 ? "" : "s"} failed to scout.`
+                        : "";
+                setSuccessMessage(
+                    `Listen run finished. No new postings were added.${failureNote}`
+                );
+                return;
+            }
+
+            const duplicateNote =
+                duplicateCount > 0
+                    ? ` Skipped ${duplicateCount} duplicate posting${duplicateCount === 1 ? "" : "s"}.`
+                    : "";
+            const failureNote =
+                failedRoles > 0
+                    ? ` ${failedRoles} role${failedRoles === 1 ? "" : "s"} failed to scout.`
+                    : "";
+
+            setSuccessMessage(
+                `Added ${addedCount} posting${addedCount === 1 ? "" : "s"} across ${rolesWithAdditions} role${rolesWithAdditions === 1 ? "" : "s"} from web listening.${duplicateNote}${failureNote}`
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setErrorMessage(message);
+        } finally {
+            setIsListeningAll(false);
+        }
+    };
+
     const openPracticeForRole = (targetId: string) => {
         handleSetFocus(targetId);
         router.push(`/practice?focusRole=${encodeURIComponent(targetId)}`);
@@ -412,6 +627,13 @@ export default function RolesPage() {
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-3">
+                        <button
+                            onClick={() => void handleListenAllRoles()}
+                            disabled={isListeningAll}
+                            className="cursor-pointer rounded-xl border border-[var(--accent)]/50 bg-[var(--accent)]/15 px-4 py-2 text-sm font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/25 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            {isListeningAll ? "Listening..." : "Listen Web (All Active Roles)"}
+                        </button>
                         <button
                             onClick={() => router.push("/")}
                             className="cursor-pointer rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-white transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--surface-light)]"
@@ -485,6 +707,20 @@ export default function RolesPage() {
                                     className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-[var(--primary-light)]"
                                 />
                             </label>
+                            <label className="flex flex-col gap-1 text-sm text-[var(--text-muted)] md:col-span-2">
+                                Skills To Focus (comma-separated)
+                                <input
+                                    value={roleForm.skillFocus}
+                                    onChange={(event) =>
+                                        setRoleForm((prev) => ({
+                                            ...prev,
+                                            skillFocus: event.target.value,
+                                        }))
+                                    }
+                                    placeholder="system design, distributed systems, stakeholder communication"
+                                    className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-[var(--primary-light)]"
+                                />
+                            </label>
                             <label className="flex flex-col gap-1 text-sm text-[var(--text-muted)]">
                                 Preferred Location
                                 <input
@@ -534,9 +770,9 @@ export default function RolesPage() {
                     <div className="glass-card flex flex-col gap-3 p-6 lg:col-span-2">
                         <h2 className="text-lg font-semibold text-white">Workflow</h2>
                         <div className="space-y-3 text-sm text-[var(--text-muted)]">
-                            <p>1. Define the role and domain you want to target.</p>
-                            <p>2. Add concrete postings as Yutori delivers matches.</p>
-                            <p>3. Mark one role as focus and jump into practice sessions.</p>
+                            <p>1. Define role, target skills, and aspiration.</p>
+                            <p>2. Listen for openings via API and attach concrete postings.</p>
+                            <p>3. Mark one posting as primary JD context, then practice.</p>
                         </div>
                         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--text-muted)]">
                             Current focus:
@@ -621,10 +857,18 @@ export default function RolesPage() {
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 grid gap-3 text-xs text-[var(--text-muted)] md:grid-cols-3">
+                                    <div className="mt-4 grid gap-3 text-xs text-[var(--text-muted)] md:grid-cols-4">
                                         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
                                             <div className="mb-1 uppercase tracking-wider">Aspiration</div>
                                             <div className="text-sm text-white">{target.aspiration}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+                                            <div className="mb-1 uppercase tracking-wider">Skill Focus</div>
+                                            <div className="text-sm text-white">
+                                                {target.skillFocus.length > 0
+                                                    ? target.skillFocus.join(", ")
+                                                    : "Not set"}
+                                            </div>
                                         </div>
                                         <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
                                             <div className="mb-1 uppercase tracking-wider">Location</div>
@@ -664,18 +908,54 @@ export default function RolesPage() {
                                                                     {posting.source ? ` · ${posting.source}` : ""}
                                                                 </p>
                                                             </div>
-                                                            <a
-                                                                href={posting.url}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="text-xs font-semibold text-[var(--primary-light)] hover:underline"
-                                                            >
-                                                                Open posting
-                                                            </a>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() =>
+                                                                        handleSetPrimaryPosting(
+                                                                            target.id,
+                                                                            posting.id
+                                                                        )
+                                                                    }
+                                                                    className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold ${
+                                                                        target.primaryPostingId === posting.id
+                                                                            ? "bg-[var(--primary)] text-white"
+                                                                            : "border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:border-[var(--primary-light)]"
+                                                                    }`}
+                                                                >
+                                                                    {target.primaryPostingId === posting.id
+                                                                        ? "Primary JD Context"
+                                                                        : "Use as JD Context"}
+                                                                </button>
+                                                                <a
+                                                                    href={posting.url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="text-xs font-semibold text-[var(--primary-light)] hover:underline"
+                                                                >
+                                                                    Open posting
+                                                                </a>
+                                                            </div>
                                                         </div>
                                                         {posting.summary && (
                                                             <p className="mt-2 text-xs text-[var(--text-muted)]">
                                                                 {posting.summary}
+                                                            </p>
+                                                        )}
+                                                        {posting.skills.length > 0 && (
+                                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                {posting.skills.slice(0, 8).map((skill) => (
+                                                                    <span
+                                                                        key={`${posting.id}_${skill}`}
+                                                                        className="rounded-full border border-[var(--accent)]/35 bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--accent)]"
+                                                                    >
+                                                                        {skill}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {posting.jobDescription && (
+                                                            <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                                                                JD: {truncateText(posting.jobDescription, 320)}
                                                             </p>
                                                         )}
                                                         <p className="mt-1 text-[10px] text-[var(--text-muted)]/80">
@@ -758,6 +1038,31 @@ export default function RolesPage() {
                                                 }
                                                 rows={2}
                                                 placeholder="Why this posting is a good practice target"
+                                                className="resize-none rounded-lg border border-[var(--border)] bg-black/10 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-[var(--primary-light)] md:col-span-2"
+                                            />
+                                            <input
+                                                value={postingDraft.skills}
+                                                onChange={(event) =>
+                                                    handlePostingDraftChange(
+                                                        target.id,
+                                                        "skills",
+                                                        event.target.value
+                                                    )
+                                                }
+                                                placeholder="Skills in this opening (comma-separated)"
+                                                className="rounded-lg border border-[var(--border)] bg-black/10 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-[var(--primary-light)] md:col-span-2"
+                                            />
+                                            <textarea
+                                                value={postingDraft.jobDescription}
+                                                onChange={(event) =>
+                                                    handlePostingDraftChange(
+                                                        target.id,
+                                                        "jobDescription",
+                                                        event.target.value
+                                                    )
+                                                }
+                                                rows={4}
+                                                placeholder="Paste JD details here (responsibilities, requirements, stack)."
                                                 className="resize-none rounded-lg border border-[var(--border)] bg-black/10 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-[var(--primary-light)] md:col-span-2"
                                             />
                                         </div>

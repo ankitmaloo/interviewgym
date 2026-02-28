@@ -96,7 +96,7 @@ const statusLabels: Record<RoleTargetStatus, string> = {
 };
 
 function formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleDateString(undefined, {
+    return new Date(timestamp).toLocaleString(undefined, {
         dateStyle: "medium",
         timeStyle: "short",
     });

@@ -11,7 +11,18 @@ export type Problem = {
     estimatedTime: Record<Difficulty, string>;
 };
 
+const LOCKED_INTERVIEWER_AGENT_BY_PROBLEM: Record<string, string> = {
+    "2": "agent_8801kjgt3d1rekg84s1ej4ywxcjq",
+};
+const DEFAULT_FALLBACK_INTERVIEWER_AGENT =
+    "agent_8801kjgt3d1rekg84s1ej4ywxcjq";
+
 function getInterviewerAgent(problemId: string, difficulty: Difficulty): string {
+    const lockedAgentId = LOCKED_INTERVIEWER_AGENT_BY_PROBLEM[problemId];
+    if (lockedAgentId) {
+        return lockedAgentId;
+    }
+
     const suffix = difficulty.toUpperCase();
     const keys = [
         `NEXT_PUBLIC_INTERVIEWER_AGENT_${problemId}_${suffix}`,
@@ -29,7 +40,7 @@ function getInterviewerAgent(problemId: string, difficulty: Difficulty): string 
         }
     }
 
-    return "";
+    return DEFAULT_FALLBACK_INTERVIEWER_AGENT;
 }
 
 /**

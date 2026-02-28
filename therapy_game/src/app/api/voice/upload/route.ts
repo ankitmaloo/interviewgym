@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadInterviewAudioToModulate } from "@/lib/integrations/modulate";
+import { analyzeInterviewSentimentWithYutori } from "@/lib/integrations/yutori";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
         const problemTitle = readString(formData.get("problemTitle"));
         const difficulty = readString(formData.get("difficulty"));
         const focusRole = readString(formData.get("focusRole"));
+        const focusDomain = readString(formData.get("focusDomain"));
+        const focusAspiration = readString(formData.get("focusAspiration"));
 
         if (!userId || !problemId || !problemTitle || !difficulty) {
             return NextResponse.json(
@@ -48,9 +51,27 @@ export async function POST(request: NextRequest) {
             focusRole: focusRole || null,
         });
 
+        const transcriptForSentiment = result.transcript ?? "";
+        const responseForSentiment = result.responseText ?? "";
+        const sentiment =
+            transcriptForSentiment || responseForSentiment
+                ? await analyzeInterviewSentimentWithYutori({
+                      transcript: transcriptForSentiment,
+                      responseText: responseForSentiment,
+                      roleContext: {
+                          role: focusRole || undefined,
+                          domain: focusDomain || undefined,
+                          aspiration: focusAspiration || undefined,
+                          difficulty,
+                          problemTitle,
+                      },
+                  })
+                : null;
+
         return NextResponse.json({
             ok: true,
             ...result,
+            sentiment,
         });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

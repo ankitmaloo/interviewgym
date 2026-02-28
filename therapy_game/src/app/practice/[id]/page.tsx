@@ -108,7 +108,34 @@ type ModulateUploadResponse = {
     responseText?: string;
     audioUrl?: string;
     message?: string;
+    sentiment?: {
+        provider: "yutori" | "fallback";
+        sentiment: "positive" | "neutral" | "negative";
+        overallScore: number;
+        confidence: number;
+        summary: string;
+        dimensions: Array<{
+            name: string;
+            score: number;
+            label: "strength" | "neutral" | "risk";
+            rationale: string;
+        }>;
+        recommendations: string[];
+        notes?: string;
+    } | null;
     error?: string;
+};
+
+type RoleResearchBrief = {
+    provider: "yutori" | "fallback";
+    role: string;
+    domain: string;
+    headline: string;
+    marketSignals: string[];
+    keySkills: string[];
+    likelyInterviewFocus: string[];
+    preparationActions: string[];
+    notes?: string;
 };
 
 type ElevenLabsSessionResponse = {
@@ -160,8 +187,12 @@ export default function PracticeSessionPage() {
         responseText?: string;
         audioUrl?: string;
         message?: string;
+        sentiment?: ModulateUploadResponse["sentiment"];
     } | null>(null);
     const [modulateError, setModulateError] = useState<string | null>(null);
+    const [researchBrief, setResearchBrief] = useState<RoleResearchBrief | null>(null);
+    const [isResearchLoading, setIsResearchLoading] = useState(false);
+    const [researchError, setResearchError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesRef = useRef<ChatMessage[]>([]);
 
@@ -252,6 +283,65 @@ export default function PracticeSessionPage() {
             null
         );
     }, [focusedRole]);
+
+    useEffect(() => {
+        if (!authenticated || !focusedRole) {
+            setResearchBrief(null);
+            setResearchError(null);
+            return;
+        }
+
+        let cancelled = false;
+        const fetchRoleResearch = async () => {
+            setIsResearchLoading(true);
+            setResearchError(null);
+
+            try {
+                const response = await fetch("/api/roles/research", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        role: focusedRole.role,
+                        domain: focusedRole.domain,
+                        aspiration: focusedRole.aspiration,
+                    }),
+                });
+
+                const payload = (await response
+                    .json()
+                    .catch(() => null)) as
+                    | { ok?: boolean; roleBrief?: RoleResearchBrief; error?: string }
+                    | null;
+
+                if (!response.ok || !payload?.ok || !payload.roleBrief) {
+                    throw new Error(
+                        payload?.error || `Role research failed (${response.status}).`
+                    );
+                }
+
+                if (!cancelled) {
+                    setResearchBrief(payload.roleBrief);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setResearchError(
+                        error instanceof Error ? error.message : String(error)
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsResearchLoading(false);
+                }
+            }
+        };
+
+        void fetchRoleResearch();
+        return () => {
+            cancelled = true;
+        };
+    }, [authenticated, focusedRole]);
 
     // Call timer
     useEffect(() => {
@@ -388,6 +478,8 @@ export default function PracticeSessionPage() {
             formData.append("problemTitle", problem?.title || `Problem ${problemId}`);
             formData.append("difficulty", difficulty);
             formData.append("focusRole", focusedRole?.role || "");
+            formData.append("focusDomain", focusedRole?.domain || "");
+            formData.append("focusAspiration", focusedRole?.aspiration || "");
 
             const response = await fetch("/api/voice/upload", {
                 method: "POST",
@@ -409,6 +501,7 @@ export default function PracticeSessionPage() {
                 responseText: payload.responseText,
                 audioUrl: payload.audioUrl,
                 message: payload.message,
+                sentiment: payload.sentiment,
             });
 
             if (payload.transcript || payload.responseText) {
@@ -467,7 +560,17 @@ export default function PracticeSessionPage() {
             const res = await fetch("/api/evaluate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ transcript: transcriptString }),
+                body: JSON.stringify({
+                    transcript: transcriptString,
+                    focusRole: focusedRole?.role ?? null,
+                    pathway: focusedRole
+                        ? {
+                              role: focusedRole.role,
+                              domain: focusedRole.domain,
+                              aspiration: focusedRole.aspiration,
+                          }
+                        : null,
+                }),
             });
 
             if (!res.ok) {
@@ -1036,9 +1139,64 @@ export default function PracticeSessionPage() {
                                                     Open response audio
                                                 </a>
                                             )}
+                                            {modulateResult.sentiment && (
+                                                <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface)]/70 p-2">
+                                                    <p className="font-semibold text-[var(--accent)]">
+                                                        Yutori Sentiment Agent
+                                                    </p>
+                                                    <p className="mt-1">
+                                                        {modulateResult.sentiment.sentiment.toUpperCase()} ·{" "}
+                                                        {modulateResult.sentiment.overallScore}/100
+                                                    </p>
+                                                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                                        {modulateResult.sentiment.summary}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
+
+                                {focusedRole && (
+                                    <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)]/50 p-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--primary-light)]">
+                                            Yutori Research Agent
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                            Additional role research to guide how you answer for the selected pathway.
+                                        </p>
+
+                                        {isResearchLoading ? (
+                                            <p className="mt-2 text-xs text-[var(--text-muted)]">
+                                                Researching role signals...
+                                            </p>
+                                        ) : researchError ? (
+                                            <p className="mt-2 text-xs text-red-300">
+                                                {researchError}
+                                            </p>
+                                        ) : researchBrief ? (
+                                            <div className="mt-2 space-y-2 text-xs text-white">
+                                                <p className="font-semibold">{researchBrief.headline}</p>
+                                                {researchBrief.keySkills.length > 0 && (
+                                                    <p>
+                                                        Skills focus: {researchBrief.keySkills.slice(0, 3).join(" · ")}
+                                                    </p>
+                                                )}
+                                                {researchBrief.likelyInterviewFocus.length > 0 && (
+                                                    <p>
+                                                        Interview focus: {researchBrief.likelyInterviewFocus
+                                                            .slice(0, 2)
+                                                            .join(" · ")}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="mt-2 text-xs text-[var(--text-muted)]">
+                                                No role research available yet.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
                                 <span className="text-xs text-[var(--text-muted)]">

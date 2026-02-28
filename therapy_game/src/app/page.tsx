@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { getClientUserId } from "@/lib/userIdentity";
+import {
+  DashboardStats,
+  getDashboardStatsFromStorage,
+} from "@/lib/sessionsStore";
 import {
   AreaChart,
   Area,
@@ -200,10 +202,9 @@ export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(null);
   const [memoryLoading, setMemoryLoading] = useState(true);
-
-  const stats = useQuery(api.sessions.getDashboardStats);
 
   useEffect(() => {
     const auth = localStorage.getItem("iaso_ai_auth");
@@ -211,9 +212,22 @@ export default function Home() {
       router.push("/login");
     } else {
       setAuthenticated(true);
+      setStats(getDashboardStatsFromStorage());
     }
     setChecking(false);
   }, [router]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const refreshStats = () => {
+      setStats(getDashboardStatsFromStorage());
+    };
+
+    refreshStats();
+    window.addEventListener("focus", refreshStats);
+    return () => window.removeEventListener("focus", refreshStats);
+  }, [authenticated]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -291,11 +305,11 @@ export default function Home() {
   const weaknesses = memorySummary?.weaknesses ?? [];
   const memoryInterviews = memorySummary?.recentInterviews ?? [];
 
-  if (checking || !authenticated || stats === undefined) {
+  if (checking || !authenticated || !stats) {
     return (
       <div className="bg-gradient-animated flex min-h-screen flex-col items-center justify-center gap-4">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--primary-light)] border-t-transparent" />
-        {stats === undefined && !checking && authenticated && (
+        {!stats && !checking && authenticated && (
           <p className="text-sm text-[var(--text-muted)]">Building your dashboard...</p>
         )}
       </div>
@@ -325,7 +339,7 @@ export default function Home() {
             </div>
             {sidebarOpen && (
               <span className="whitespace-nowrap text-lg font-bold text-white">
-                IASO AI
+                Interview Gym
               </span>
             )}
           </div>
@@ -383,7 +397,7 @@ export default function Home() {
             </button>
             <div>
               <h1 className="text-lg font-bold text-white">Dashboard</h1>
-              <p className="text-xs text-[var(--text-muted)]">Welcome back, Coach</p>
+              <p className="text-xs text-[var(--text-muted)]">Welcome back, Candidate</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -612,7 +626,7 @@ export default function Home() {
             >
               <div className="mb-4">
                 <h2 className="text-lg font-semibold text-white">Skill Breakdown</h2>
-                <p className="text-sm text-[var(--text-muted)]">Core coaching competencies</p>
+                <p className="text-sm text-[var(--text-muted)]">Core interview competencies</p>
               </div>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">

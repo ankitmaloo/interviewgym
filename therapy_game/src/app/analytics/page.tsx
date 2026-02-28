@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { loadSessionsFromStorage, type SessionRecord } from "@/lib/sessionsStore";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -68,25 +67,12 @@ const formatDuration = (seconds: number) => {
     return `${m}m`;
 };
 
-const getTimeAgo = (timestamp: number) => {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return "just now";
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days === 1) return "Yesterday";
-    return `${days} days ago`;
-};
-
 export default function AnalyticsPage() {
     const router = useRouter();
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
-
-    const sessions = useQuery(api.sessions.listSessions);
+    const [sessions, setSessions] = useState<SessionRecord[] | null>(null);
 
     useEffect(() => {
         const auth = localStorage.getItem("iaso_ai_auth");
@@ -94,9 +80,22 @@ export default function AnalyticsPage() {
             router.push("/login");
         } else {
             setAuthenticated(true);
+            setSessions(loadSessionsFromStorage());
         }
         setChecking(false);
     }, [router]);
+
+    useEffect(() => {
+        if (!authenticated) return;
+
+        const refreshSessions = () => {
+            setSessions(loadSessionsFromStorage());
+        };
+
+        refreshSessions();
+        window.addEventListener("focus", refreshSessions);
+        return () => window.removeEventListener("focus", refreshSessions);
+    }, [authenticated]);
 
     const handleLogout = () => {
         localStorage.removeItem("iaso_ai_auth");
@@ -134,7 +133,7 @@ export default function AnalyticsPage() {
                         </div>
                         {sidebarOpen && (
                             <span className="whitespace-nowrap text-lg font-bold text-white">
-                                IASO AI
+                                Interview Gym
                             </span>
                         )}
                     </div>
@@ -203,11 +202,11 @@ export default function AnalyticsPage() {
                     <div className="glass-card overflow-hidden">
                         <div className="border-b border-[var(--border)] bg-[var(--surface)]/50 px-6 py-4">
                             <h2 className="text-lg font-semibold text-white">All Practice Sessions</h2>
-                            <p className="text-sm text-[var(--text-muted)]">Overview of your coaching performance</p>
+                            <p className="text-sm text-[var(--text-muted)]">Overview of your interview performance</p>
                         </div>
 
                         <div className="divide-y divide-[var(--border)]">
-                            {sessions === undefined ? (
+                            {sessions === null ? (
                                 <div className="flex flex-col items-center justify-center py-20 gap-4">
                                     <div className="h-8 w-8 animate-spin rounded-full border-3 border-[var(--primary-light)] border-t-transparent" />
                                     <p className="text-sm text-[var(--text-muted)]">Loading sessions...</p>
@@ -227,9 +226,9 @@ export default function AnalyticsPage() {
                                     </button>
                                 </div>
                             ) : (
-                                sessions.map((session: any, i: number) => (
+                                sessions.map((session, i) => (
                                     <div
-                                        key={session._id}
+                                        key={session.id}
                                         className="flex flex-col gap-4 p-6 transition-colors hover:bg-[var(--surface-light)]/30 sm:flex-row sm:items-center"
                                         style={{ animation: `fadeInUp 0.5s ease-out ${i * 0.05}s forwards`, opacity: 0 }}
                                     >
@@ -255,7 +254,7 @@ export default function AnalyticsPage() {
                                         </div>
 
                                         <button
-                                            onClick={() => router.push(`/practice/${session.problemId}/analysis?session=${session._id}`)}
+                                            onClick={() => router.push(`/practice/${session.problemId}/analysis?session=${session.id}`)}
                                             className="group flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 py-2.5 text-sm font-semibold text-white transition-all hover:border-[var(--primary-light)] hover:bg-[var(--primary)]/10"
                                         >
                                             View Report

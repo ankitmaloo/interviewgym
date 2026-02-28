@@ -1,4 +1,5 @@
 import neo4j, { Driver } from "neo4j-driver";
+import { hydrateServerEnv } from "@/lib/serverEnv";
 import { DEFAULT_USER_ID, normalizeUserId } from "@/lib/userIdentity";
 
 const STRENGTH_THRESHOLD = 7;
@@ -64,6 +65,8 @@ export type UserMemorySummary = {
 let cachedDriver: Driver | null = null;
 
 function readConfig(): Neo4jConfig | null {
+    hydrateServerEnv(["NEO4J_"]);
+
     const uri = process.env.NEO4J_URI;
     const username = process.env.NEO4J_USERNAME;
     const password = process.env.NEO4J_PASSWORD;

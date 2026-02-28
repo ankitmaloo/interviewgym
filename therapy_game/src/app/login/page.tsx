@@ -53,7 +53,7 @@ export default function LoginPage() {
         className="pointer-events-none absolute top-20 left-10 h-72 w-72 rounded-full opacity-20"
         style={{
           background:
-            "radial-gradient(circle, rgba(124,92,191,0.6) 0%, transparent 70%)",
+            "radial-gradient(circle, rgba(255,107,44,0.62) 0%, transparent 70%)",
           animation: "float 6s ease-in-out infinite",
         }}
       />
@@ -61,7 +61,7 @@ export default function LoginPage() {
         className="pointer-events-none absolute right-16 bottom-24 h-56 w-56 rounded-full opacity-15"
         style={{
           background:
-            "radial-gradient(circle, rgba(56,189,248,0.5) 0%, transparent 70%)",
+            "radial-gradient(circle, rgba(34,211,238,0.52) 0%, transparent 70%)",
           animation: "float 8s ease-in-out 2s infinite",
         }}
       />
@@ -69,7 +69,7 @@ export default function LoginPage() {
         className="pointer-events-none absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-10"
         style={{
           background:
-            "radial-gradient(circle, rgba(167,139,250,0.4) 0%, transparent 60%)",
+            "radial-gradient(circle, rgba(255,159,89,0.42) 0%, transparent 60%)",
           animation: "float 10s ease-in-out 1s infinite",
         }}
       />
@@ -98,10 +98,10 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-white">
-            IASO AI
+            Interview Gym
           </h1>
           <p className="mt-2 text-sm text-[var(--text-muted)]">
-            Sign in to begin your journey
+            Sign in to start your next interview training block
           </p>
         </div>
 
@@ -156,7 +156,7 @@ export default function LoginPage() {
               id="login-button"
               type="submit"
               disabled={loading}
-              className="relative w-full cursor-pointer overflow-hidden rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--primary-light)] px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(124,92,191,0.4)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              className="relative w-full cursor-pointer overflow-hidden rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--primary-light)] px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(255,107,44,0.45)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -190,7 +190,7 @@ export default function LoginPage() {
 
         {/* Footer hint */}
         <p className="mt-6 text-center text-xs text-[var(--text-muted)]/70">
-          Improve your coaching skills 💜
+          Train your interview instincts every day
         </p>
       </div>
     </div>

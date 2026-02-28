@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../../../convex/_generated/api";
 import { getProblemById } from "@/lib/problems";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import { getSessionById, type SessionRecord } from "@/lib/sessionsStore";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -127,16 +125,13 @@ export default function AnalysisPage() {
     const searchParams = useSearchParams();
     const problemId = params.id as string;
     const problem = getProblemById(problemId);
-    const sessionId = searchParams.get("session") as Id<"sessions"> | null;
+    const sessionId = searchParams.get("session");
 
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
-
-    // Load session from Convex
-    const session = useQuery(
-        api.sessions.getSession,
-        sessionId ? { id: sessionId } : "skip"
+    const [session, setSession] = useState<SessionRecord | null | undefined>(
+        undefined
     );
     const analysis: AnalysisItem[] | null =
         (session?.analysis as AnalysisItem[] | undefined) ?? null;
@@ -151,6 +146,17 @@ export default function AnalysisPage() {
         setChecking(false);
     }, [router]);
 
+    useEffect(() => {
+        if (!authenticated) return;
+
+        if (!sessionId) {
+            setSession(null);
+            return;
+        }
+
+        setSession(getSessionById(sessionId));
+    }, [authenticated, sessionId]);
+
     const handleLogout = () => {
         localStorage.removeItem("iaso_ai_auth");
         router.push("/login");
@@ -164,7 +170,7 @@ export default function AnalysisPage() {
         );
     }
 
-    // Convex query still loading
+    // Session still loading
     if (session === undefined && sessionId) {
         return (
             <div className="bg-gradient-animated flex min-h-screen flex-col items-center justify-center gap-4">
@@ -246,7 +252,7 @@ export default function AnalysisPage() {
                         </div>
                         {sidebarOpen && (
                             <span className="whitespace-nowrap text-lg font-bold text-white">
-                                IASO AI
+                                Interview Gym
                             </span>
                         )}
                     </div>

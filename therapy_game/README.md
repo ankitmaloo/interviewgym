@@ -1,4 +1,4 @@
-# InterviewGym App
+# Interview Gym App
 
 Next.js app for interview practice sessions, evaluation, and analytics.
 
@@ -37,3 +37,55 @@ This worktree adds Neo4j-backed user memory for:
 Setup and data model details are documented in:
 
 - [`docs/memory.md`](./docs/memory.md)
+
+## New Stack
+
+- `Neo4j`: interview memory graph (`/api/memory/upsert`, `/api/memory/summary`)
+- `Tavily`: web search for role scouting (`/api/roles/scout`)
+- `Yutori`: posting curation over Tavily results (`/api/roles/scout`)
+- `ElevenLabs`: realtime websocket interviewer conversation (`/api/voice/elevenlabs/session`)
+- `Modulate`: async audio upload utilities (`/api/voice/upload`)
+
+### Environment Variables
+
+Add these in `therapy_game/.env.local` (or repo-root `.env`):
+
+```bash
+# Neo4j memory
+NEO4J_URI=neo4j+s://<instance>.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=neo4j
+
+# Tavily search
+TAVILY_API_KEY=<key>
+
+# Yutori curation
+YUTORI_API_URL=https://<your-yutori-endpoint>
+YUTORI_API_KEY=<key>
+
+# ElevenLabs (recommended server-side keys)
+ELEVENLABS_API_KEY=<key>
+ELEVENLABS_INTERVIEWER_AGENT_1_EASY=agent_xxxxx
+ELEVENLABS_INTERVIEWER_AGENT_1_MEDIUM=agent_xxxxx
+ELEVENLABS_INTERVIEWER_AGENT_1_HARD=agent_xxxxx
+# ...repeat for scenario ids 2..10
+# Optional defaults:
+# ELEVENLABS_INTERVIEWER_AGENT_EASY=agent_xxxxx
+# ELEVENLABS_INTERVIEWER_AGENT_DEFAULT=agent_xxxxx
+#
+# Public client-side keys are also supported:
+# NEXT_PUBLIC_INTERVIEWER_AGENT_1_EASY=agent_xxxxx
+# (legacy NEXT_PUBLIC_AGENT_* keys are still supported)
+
+# Modulate async upload endpoint
+MODULATE_API_URL=https://<your-modulate-endpoint>
+MODULATE_API_KEY=<key>
+```
+
+### Voice Status
+
+- Live interview conversation uses ElevenLabs over websocket.
+- Session setup is served by `/api/voice/elevenlabs/session` and prefers signed websocket URLs when `ELEVENLABS_API_KEY` is present.
+- Interviewer persona comes from scenario+difficulty agent IDs.
+- Modulate is intentionally not used for live conversation; it is optional async upload/review in the notes panel.

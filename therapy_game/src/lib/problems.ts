@@ -11,19 +11,32 @@ export type Problem = {
     estimatedTime: Record<Difficulty, string>;
 };
 
+function getInterviewerAgent(problemId: string, difficulty: Difficulty): string {
+    const suffix = difficulty.toUpperCase();
+    const keys = [
+        `NEXT_PUBLIC_INTERVIEWER_AGENT_${problemId}_${suffix}`,
+        `NEXT_PUBLIC_INTERVIEWER_AGENT_${suffix}`,
+        "NEXT_PUBLIC_INTERVIEWER_AGENT_DEFAULT",
+        `NEXT_PUBLIC_AGENT_${problemId}_${suffix}`,
+        `NEXT_PUBLIC_AGENT_${suffix}`,
+        "NEXT_PUBLIC_AGENT_DEFAULT",
+    ];
+
+    for (const key of keys) {
+        const value = process.env[key];
+        if (typeof value === "string" && value.length > 0) {
+            return value;
+        }
+    }
+
+    return "";
+}
+
 /**
  * List of interview practice scenarios.
  *
  * Each scenario has 3 difficulty levels (easy, medium, hard),
- * each mapping to a different ElevenLabs agent.
- *
- * Set agent IDs in .env.local:
- *   NEXT_PUBLIC_AGENT_<ID>_EASY=agent_xxxxx
- *   NEXT_PUBLIC_AGENT_<ID>_MEDIUM=agent_xxxxx
- *   NEXT_PUBLIC_AGENT_<ID>_HARD=agent_xxxxx
- *
- * Note: [COMPANY] and [ROLE] are placeholders that can be dynamically
- * replaced in the UI with actual company names and job roles.
+ * mapped to interviewer agents for realtime ElevenLabs conversations.
  */
 export const problems: Problem[] = [
     {
@@ -33,9 +46,9 @@ export const problems: Problem[] = [
             "Practice answering behavioral questions about working in teams. Demonstrate your ability to collaborate, handle conflict, and contribute to group success using specific examples.",
         category: "Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_1_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_1_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_1_HARD || "",
+            easy: getInterviewerAgent("1", "easy"),
+            medium: getInterviewerAgent("1", "medium"),
+            hard: getInterviewerAgent("1", "hard"),
         },
         color: "from-[#7c5cbf] to-[#a78bfa]",
         icon: "🤝",
@@ -45,12 +58,12 @@ export const problems: Problem[] = [
         id: "2",
         title: "Leadership & Initiative",
         description:
-            "Answer questions about times you've taken initiative, led projects, or influenced others. Show your leadership potential relevant to [ROLE] through concrete examples and measurable outcomes.",
+            "Answer questions about times you've taken initiative, led projects, or influenced others. Show your leadership potential through concrete examples and measurable outcomes.",
         category: "Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_2_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_2_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_2_HARD || "",
+            easy: getInterviewerAgent("2", "easy"),
+            medium: getInterviewerAgent("2", "medium"),
+            hard: getInterviewerAgent("2", "hard"),
         },
         color: "from-[#38bdf8] to-[#818cf8]",
         icon: "⭐",
@@ -63,9 +76,9 @@ export const problems: Problem[] = [
             "Discuss challenging situations you've faced and how you overcame them. Demonstrate analytical thinking, resourcefulness, and resilience with specific examples.",
         category: "Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_3_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_3_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_3_HARD || "",
+            easy: getInterviewerAgent("3", "easy"),
+            medium: getInterviewerAgent("3", "medium"),
+            hard: getInterviewerAgent("3", "hard"),
         },
         color: "from-[#f472b6] to-[#a78bfa]",
         icon: "🧩",
@@ -75,12 +88,12 @@ export const problems: Problem[] = [
         id: "4",
         title: "Tell Me About Yourself",
         description:
-            "Practice your elevator pitch and career story. Learn to concisely communicate your background, skills, interests, and why you're a great fit for [ROLE] at [COMPANY].",
+            "Practice your elevator pitch and career story. Learn to concisely communicate your background, skills, interests, and why you're a great fit for the role.",
         category: "Introduction",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_4_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_4_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_4_HARD || "",
+            easy: getInterviewerAgent("4", "easy"),
+            medium: getInterviewerAgent("4", "medium"),
+            hard: getInterviewerAgent("4", "hard"),
         },
         color: "from-[#34d399] to-[#38bdf8]",
         icon: "👤",
@@ -93,9 +106,9 @@ export const problems: Problem[] = [
             "Practice discussing weaknesses, mistakes, and failures professionally. Demonstrate self-awareness, growth mindset, and ability to learn from setbacks.",
         category: "Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_5_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_5_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_5_HARD || "",
+            easy: getInterviewerAgent("5", "easy"),
+            medium: getInterviewerAgent("5", "medium"),
+            hard: getInterviewerAgent("5", "hard"),
         },
         color: "from-[#fbbf24] to-[#f97316]",
         icon: "📈",
@@ -108,9 +121,9 @@ export const problems: Problem[] = [
             "Discuss challenging technical problems you've faced in projects - bugs, performance issues, or system failures. Explain your debugging approach, problem-solving process, and how you resolved the issue.",
         category: "Technical Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_6_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_6_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_6_HARD || "",
+            easy: getInterviewerAgent("6", "easy"),
+            medium: getInterviewerAgent("6", "medium"),
+            hard: getInterviewerAgent("6", "hard"),
         },
         color: "from-[#ef4444] to-[#f97316]",
         icon: "🐛",
@@ -123,9 +136,9 @@ export const problems: Problem[] = [
             "Share experiences where you had to quickly learn a new programming language, framework, or tool. Demonstrate adaptability, learning strategies, and how you applied new knowledge to deliver results.",
         category: "Technical Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_7_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_7_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_7_HARD || "",
+            easy: getInterviewerAgent("7", "easy"),
+            medium: getInterviewerAgent("7", "medium"),
+            hard: getInterviewerAgent("7", "hard"),
         },
         color: "from-[#10b981] to-[#34d399]",
         icon: "📚",
@@ -138,9 +151,9 @@ export const problems: Problem[] = [
             "Practice answering questions about working under tight deadlines or managing multiple competing priorities. Show your time management, prioritization skills, and ability to deliver under pressure.",
         category: "Technical Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_8_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_8_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_8_HARD || "",
+            easy: getInterviewerAgent("8", "easy"),
+            medium: getInterviewerAgent("8", "medium"),
+            hard: getInterviewerAgent("8", "hard"),
         },
         color: "from-[#ec4899] to-[#f43f5e]",
         icon: "⏰",
@@ -153,9 +166,9 @@ export const problems: Problem[] = [
             "Discuss experiences giving or receiving code review feedback. Demonstrate collaboration skills, technical communication, handling criticism constructively, and commitment to code quality.",
         category: "Technical Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_9_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_9_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_9_HARD || "",
+            easy: getInterviewerAgent("9", "easy"),
+            medium: getInterviewerAgent("9", "medium"),
+            hard: getInterviewerAgent("9", "hard"),
         },
         color: "from-[#8b5cf6] to-[#a78bfa]",
         icon: "🔍",
@@ -165,12 +178,12 @@ export const problems: Problem[] = [
         id: "10",
         title: "System Design & Architecture",
         description:
-            "Answer questions about designing or architecting technical solutions relevant to [ROLE] at [COMPANY]. Explain your decision-making process, trade-offs considered, and how you balanced requirements like scalability, performance, and maintainability.",
+            "Answer questions about designing or architecting technical solutions. Explain your decision-making process, trade-offs considered, and how you balanced requirements like scalability, performance, and maintainability.",
         category: "Technical Behavioral",
         agents: {
-            easy: process.env.NEXT_PUBLIC_AGENT_10_EASY || "",
-            medium: process.env.NEXT_PUBLIC_AGENT_10_MEDIUM || "",
-            hard: process.env.NEXT_PUBLIC_AGENT_10_HARD || "",
+            easy: getInterviewerAgent("10", "easy"),
+            medium: getInterviewerAgent("10", "medium"),
+            hard: getInterviewerAgent("10", "hard"),
         },
         color: "from-[#06b6d4] to-[#3b82f6]",
         icon: "🏗️",
@@ -180,37 +193,4 @@ export const problems: Problem[] = [
 
 export function getProblemById(id: string): Problem | undefined {
     return problems.find((p) => p.id === id);
-}
-
-/**
- * Replace [COMPANY] and [ROLE] placeholders in text
- * @param text - Text containing placeholders
- * @param company - Company name (optional)
- * @param jobRole - Job role (optional)
- * @returns Text with placeholders replaced or removed
- */
-export function replacePlaceholders(
-    text: string,
-    company?: string,
-    jobRole?: string
-): string {
-    let result = text;
-
-    if (jobRole) {
-        result = result.replace(/\[ROLE\]/g, jobRole);
-    } else {
-        // Remove [ROLE] and adjust grammar if no role provided
-        result = result.replace(/\s*(for|relevant to)\s*\[ROLE\]\s*/g, ' ');
-        result = result.replace(/\[ROLE\]/g, 'the role');
-    }
-
-    if (company) {
-        result = result.replace(/\[COMPANY\]/g, company);
-    } else {
-        // Remove [COMPANY] and adjust grammar if no company provided
-        result = result.replace(/\s*at\s*\[COMPANY\]/g, '');
-        result = result.replace(/\[COMPANY\]/g, 'the company');
-    }
-
-    return result;
 }

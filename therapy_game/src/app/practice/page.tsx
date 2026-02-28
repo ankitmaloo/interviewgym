@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { problems, type Difficulty } from "@/lib/problems";
 import {
     loadRoleTargetsFromStorage,
@@ -95,8 +95,9 @@ const difficultyMeta: Record<
 
 export default function PracticeListPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const focusRoleFromQuery = searchParams.get("focusRole");
+    const [focusRoleFromQuery, setFocusRoleFromQuery] = useState<string | null>(
+        null
+    );
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -120,6 +121,11 @@ export default function PracticeListPage() {
         }
         setChecking(false);
     }, [router]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        setFocusRoleFromQuery(params.get("focusRole"));
+    }, []);
 
     const handleLogout = () => {
         localStorage.removeItem("iaso_ai_auth");
@@ -197,7 +203,7 @@ export default function PracticeListPage() {
                         </div>
                         {sidebarOpen && (
                             <span className="whitespace-nowrap text-lg font-bold text-white">
-                                IASO AI
+                                Interview Gym
                             </span>
                         )}
                     </div>
@@ -257,7 +263,7 @@ export default function PracticeListPage() {
                                 Practice Scenarios
                             </h1>
                             <p className="text-xs text-[var(--text-muted)]">
-                                Choose a coaching problem and difficulty level
+                                Choose an interview scenario and difficulty level
                             </p>
                         </div>
                     </div>

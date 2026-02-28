@@ -31,6 +31,24 @@ type PostingDraft = {
     summary: string;
 };
 
+type ScoutPosting = {
+    title: string;
+    company: string;
+    location: string;
+    url: string;
+    source: string;
+    summary: string;
+};
+
+type ScoutResponse = {
+    ok: boolean;
+    provider?: "yutori" | "fallback";
+    providerNotes?: string;
+    postings?: ScoutPosting[];
+    rawResultsCount?: number;
+    error?: string;
+};
+
 const emptyRoleForm: RoleFormState = {
     role: "",
     domain: "",
@@ -82,6 +100,7 @@ export default function RolesPage() {
     const [targets, setTargets] = useState<RoleTarget[]>([]);
     const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
     const [postingDrafts, setPostingDrafts] = useState<Record<string, PostingDraft>>({});
+    const [scoutingRoleId, setScoutingRoleId] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -226,6 +245,147 @@ export default function RolesPage() {
             [targetId]: emptyPostingDraft,
         }));
         setSuccessMessage("Job posting added to this role target.");
+    };
+
+    const handleScoutRole = async (target: RoleTarget) => {
+        setErrorMessage(null);
+        setSuccessMessage(null);
+        setScoutingRoleId(target.id);
+
+        try {
+            const response = await fetch("/api/roles/scout", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    role: target.role,
+                    domain: target.domain,
+                    aspiration: target.aspiration,
+                    location: target.location,
+                    searchQuery: target.searchQuery,
+                    notes: target.notes,
+                    maxResults: 8,
+                }),
+            });
+
+            const payload = (await response
+                .json()
+                .catch(() => null)) as ScoutResponse | null;
+
+            if (!response.ok || !payload?.ok) {
+                setErrorMessage(
+                    payload?.error || `Scout request failed (${response.status}).`
+                );
+                return;
+            }
+
+            const incomingPostings = Array.isArray(payload.postings)
+                ? payload.postings
+                : [];
+
+            if (incomingPostings.length === 0) {
+                const providerLabel =
+                    payload.provider === "yutori" ? "Yutori" : "Tavily fallback";
+                setSuccessMessage(
+                    `Scout completed using ${providerLabel}, but no postings were returned.`
+                );
+                return;
+            }
+
+            let addedCount = 0;
+            let duplicateCount = 0;
+
+            setTargets((prev) =>
+                prev.map((currentTarget) => {
+                    if (currentTarget.id !== target.id) return currentTarget;
+
+                    const seenUrls = new Set(
+                        currentTarget.postings.map((posting) =>
+                            normalizeUrl(posting.url).toLowerCase()
+                        )
+                    );
+
+                    const additions = incomingPostings.reduce<
+                        ReturnType<typeof buildRolePosting>[]
+                    >((acc, candidate) => {
+                        const title = candidate.title?.trim() || "";
+                        const company = candidate.company?.trim() || "";
+                        const normalized = normalizeUrl(candidate.url || "");
+                        const key = normalized.toLowerCase();
+
+                        if (!title || !company || !normalized) {
+                            return acc;
+                        }
+
+                        if (seenUrls.has(key)) {
+                            duplicateCount += 1;
+                            return acc;
+                        }
+
+                        seenUrls.add(key);
+
+                        acc.push(
+                            buildRolePosting({
+                                title,
+                                company,
+                                location:
+                                    candidate.location?.trim() ||
+                                    currentTarget.location ||
+                                    "",
+                                url: normalized,
+                                source:
+                                    candidate.source?.trim() ||
+                                    (payload.provider === "yutori"
+                                        ? "Yutori"
+                                        : "Tavily via Yutori"),
+                                summary: candidate.summary?.trim() || "",
+                            })
+                        );
+                        return acc;
+                    }, []);
+
+                    addedCount = additions.length;
+
+                    if (addedCount === 0) {
+                        return currentTarget;
+                    }
+
+                    return {
+                        ...currentTarget,
+                        postings: [...additions, ...currentTarget.postings],
+                        updatedAt: Date.now(),
+                    };
+                })
+            );
+
+            const providerLabel =
+                payload.provider === "yutori" ? "Yutori" : "Tavily fallback";
+
+            if (addedCount === 0) {
+                setSuccessMessage(
+                    `Scout completed with ${providerLabel}. All returned postings were already saved.`
+                );
+                return;
+            }
+
+            const duplicateNote =
+                duplicateCount > 0
+                    ? ` Skipped ${duplicateCount} duplicate posting${duplicateCount === 1 ? "" : "s"}.`
+                    : "";
+            const providerNote = payload.providerNotes
+                ? ` ${payload.providerNotes}`
+                : "";
+
+            setSuccessMessage(
+                `Added ${addedCount} posting${addedCount === 1 ? "" : "s"} using ${providerLabel}.${duplicateNote}${providerNote}`
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setErrorMessage(message);
+        } finally {
+            setScoutingRoleId(null);
+        }
     };
 
     const openPracticeForRole = (targetId: string) => {
@@ -440,6 +600,16 @@ export default function RolesPage() {
                                                 className="cursor-pointer rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--primary-light)]"
                                             >
                                                 Practice
+                                            </button>
+
+                                            <button
+                                                onClick={() => void handleScoutRole(target)}
+                                                disabled={scoutingRoleId === target.id}
+                                                className="cursor-pointer rounded-lg border border-[var(--accent)]/50 bg-[var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {scoutingRoleId === target.id
+                                                    ? "Scouting..."
+                                                    : "Scout (Tavily + Yutori)"}
                                             </button>
 
                                             <button

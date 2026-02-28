@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0a1a;
-  --foreground: #e8e6f0;
-  --primary: #7c5cbf;
-  --primary-light: #a78bfa;
-  --primary-dark: #5b3d99;
-  --accent: #38bdf8;
-  --accent-green: #34d399;
-  --surface: #1a1730;
-  --surface-light: #252240;
-  --border: rgba(124, 92, 191, 0.2);
-  --border-hover: rgba(124, 92, 191, 0.45);
-  --text-muted: #9892b0;
+  --background: #070f18;
+  --foreground: #f3f7fc;
+  --primary: #ff6b2c;
+  --primary-light: #ff9f59;
+  --primary-dark: #d94e18;
+  --accent: #22d3ee;
+  --accent-green: #22c55e;
+  --surface: #111c2b;
+  --surface-light: #1a2a3f;
+  --border: rgba(255, 107, 44, 0.24);
+  --border-hover: rgba(255, 159, 89, 0.62);
+  --text-muted: #9db2c8;
   --danger: #f87171;
-  --glow: rgba(124, 92, 191, 0.35);
+  --glow: rgba(255, 107, 44, 0.35);
 }
 
 @theme inline {
@@ -43,15 +43,18 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
   min-height: 100vh;
 }
 
 /* Animated gradient background */
 .bg-gradient-animated {
-  background: linear-gradient(135deg, #0c0a1a 0%, #1a1040 40%, #0f1a2e 70%, #0c0a1a 100%);
-  background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
+  background:
+    radial-gradient(circle at 12% -10%, rgba(255, 107, 44, 0.2), transparent 40%),
+    radial-gradient(circle at 88% 2%, rgba(34, 211, 238, 0.16), transparent 36%),
+    linear-gradient(155deg, #070f18 0%, #0f1a2a 45%, #0a1420 100%);
+  background-size: 180% 180%;
+  animation: gradientShift 20s ease infinite;
 }
 
 @keyframes gradientShift {
@@ -99,8 +102,8 @@ body {
 
 /* Pulse glow */
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 20px rgba(124, 92, 191, 0.2); }
-  50% { box-shadow: 0 0 40px rgba(124, 92, 191, 0.4); }
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 107, 44, 0.22); }
+  50% { box-shadow: 0 0 42px rgba(255, 107, 44, 0.45); }
 }
 
 .pulse-glow {
@@ -109,7 +112,7 @@ body {
 
 /* Glass morphism card */
 .glass-card {
-  background: rgba(26, 23, 48, 0.7);
+  background: rgba(17, 28, 43, 0.72);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border);

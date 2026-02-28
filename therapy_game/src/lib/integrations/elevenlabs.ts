@@ -8,6 +8,7 @@ export type ElevenLabsSessionConfig = {
     signedUrl?: string;
     mode: "signed-url" | "public-agent";
     configuredKey: string;
+    warning?: string;
 };
 
 const VALID_DIFFICULTIES = new Set<InterviewDifficulty>([
@@ -140,16 +141,27 @@ export async function createElevenLabsInterviewSessionConfig(input: {
         };
     }
 
-    const signedUrl = await fetchSignedWebsocketUrl({
-        agentId: resolved.agentId,
-        apiKey,
-    });
+    try {
+        const signedUrl = await fetchSignedWebsocketUrl({
+            agentId: resolved.agentId,
+            apiKey,
+        });
 
-    return {
-        connectionType: "websocket",
-        mode: "signed-url",
-        agentId: resolved.agentId,
-        signedUrl,
-        configuredKey: resolved.key,
-    };
+        return {
+            connectionType: "websocket",
+            mode: "signed-url",
+            agentId: resolved.agentId,
+            signedUrl,
+            configuredKey: resolved.key,
+        };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+            connectionType: "websocket",
+            mode: "public-agent",
+            agentId: resolved.agentId,
+            configuredKey: resolved.key,
+            warning: `Signed URL setup failed, falling back to public-agent mode: ${message}`,
+        };
+    }
 }

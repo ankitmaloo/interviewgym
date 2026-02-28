@@ -22,7 +22,7 @@ This worktree adds a Neo4j-backed memory layer for interview practice.
 
 1. User finishes a practice call.
 2. Existing `/api/evaluate` returns `scores` and `evidence`.
-3. Session is still saved to Convex.
+3. Session is saved in local browser storage for dashboard/analytics.
 4. New `/api/memory/upsert` stores memory in Neo4j.
 5. Dashboard fetches `/api/memory/summary` and renders strengths, weaknesses, and previous interviews.
 

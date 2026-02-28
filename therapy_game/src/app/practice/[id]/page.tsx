@@ -3,9 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useConversation } from "@elevenlabs/react";
-import { useMutation } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
 import { getProblemById, type Difficulty } from "@/lib/problems";
+import {
+    loadRoleTargetsFromStorage,
+    loadSelectedRoleTargetId,
+    type RoleTarget,
+} from "@/lib/roleTargets";
+import { getClientUserId } from "@/lib/userIdentity";
+import { saveSessionToStorage } from "@/lib/sessionsStore";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -90,6 +95,33 @@ type ChatMessage = {
     timestamp: Date;
 };
 
+type AnalysisMetric = {
+    category: string;
+    metric: string;
+    score: number;
+    comments: string;
+};
+
+type ModulateUploadResponse = {
+    ok?: boolean;
+    transcript?: string;
+    responseText?: string;
+    audioUrl?: string;
+    message?: string;
+    error?: string;
+};
+
+type ElevenLabsSessionResponse = {
+    ok?: boolean;
+    provider?: string;
+    connectionType?: "websocket";
+    mode?: "signed-url" | "public-agent";
+    agentId?: string;
+    signedUrl?: string;
+    configuredKey?: string;
+    error?: string;
+};
+
 const difficultyLabels: Record<Difficulty, string> = {
     easy: "Easy",
     medium: "Medium",
@@ -103,10 +135,12 @@ export default function PracticeSessionPage() {
     const problemId = params.id as string;
     const problem = getProblemById(problemId);
     const difficulty = (searchParams.get("difficulty") || "easy") as Difficulty;
+    const focusRoleIdFromQuery = searchParams.get("focusRole");
 
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [focusedRole, setFocusedRole] = useState<RoleTarget | null>(null);
     const [notes, setNotes] = useState(
         "Session Notes\n─────────────────────\n\n• Key observations:\n\n\n• Action items:\n\n\n• Follow-up questions:\n\n"
     );
@@ -116,6 +150,15 @@ export default function PracticeSessionPage() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [agentMode, setAgentMode] = useState<string>("listening");
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [modulateFile, setModulateFile] = useState<File | null>(null);
+    const [isModulateUploading, setIsModulateUploading] = useState(false);
+    const [modulateResult, setModulateResult] = useState<{
+        transcript?: string;
+        responseText?: string;
+        audioUrl?: string;
+        message?: string;
+    } | null>(null);
+    const [modulateError, setModulateError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesRef = useRef<ChatMessage[]>([]);
 
@@ -178,6 +221,21 @@ export default function PracticeSessionPage() {
         setChecking(false);
     }, [router]);
 
+    useEffect(() => {
+        if (!authenticated) return;
+
+        const storedTargets = loadRoleTargetsFromStorage();
+        const requestedRoleId = focusRoleIdFromQuery || loadSelectedRoleTargetId();
+        if (!requestedRoleId) {
+            setFocusedRole(null);
+            return;
+        }
+
+        const matchingRole =
+            storedTargets.find((target) => target.id === requestedRoleId) ?? null;
+        setFocusedRole(matchingRole);
+    }, [authenticated, focusRoleIdFromQuery]);
+
     // Call timer
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -201,18 +259,51 @@ export default function PracticeSessionPage() {
             setErrorMessage(null);
             await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            const agentId = problem?.agents[difficulty];
-            if (!agentId) {
-                setErrorMessage(
-                    `No agent configured for this problem at ${difficultyLabels[difficulty]} difficulty. Set NEXT_PUBLIC_AGENT_${problemId}_${difficulty.toUpperCase()} in your .env.local file.`
+            const configResponse = await fetch("/api/voice/elevenlabs/session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    problemId,
+                    difficulty,
+                }),
+            });
+
+            const configPayload = (await configResponse
+                .json()
+                .catch(() => null)) as ElevenLabsSessionResponse | null;
+
+            if (!configResponse.ok || !configPayload?.ok) {
+                throw new Error(
+                    configPayload?.error ||
+                        `Voice setup failed (${configResponse.status}).`
                 );
-                return;
             }
 
-            const conversationId = await conversation.startSession({
-                agentId,
-                connectionType: "websocket",
-            });
+            if (configPayload.connectionType !== "websocket") {
+                throw new Error(
+                    "Unsupported realtime voice transport. Expected websocket."
+                );
+            }
+
+            let conversationId = "";
+            if (configPayload.signedUrl) {
+                conversationId = await conversation.startSession({
+                    signedUrl: configPayload.signedUrl,
+                    connectionType: "websocket",
+                });
+            } else if (configPayload.agentId) {
+                conversationId = await conversation.startSession({
+                    agentId: configPayload.agentId,
+                    connectionType: "websocket",
+                });
+            } else {
+                throw new Error(
+                    "Missing interviewer agent configuration for realtime call."
+                );
+            }
+
             console.log("Conversation started:", conversationId);
         } catch (error) {
             console.error("Failed to start call:", error);
@@ -229,81 +320,211 @@ export default function PracticeSessionPage() {
                 setErrorMessage(msg);
             }
         }
-    }, [conversation, problem, problemId]);
+    }, [conversation, difficulty, problemId]);
 
-    const saveSession = useMutation(api.sessions.saveSession);
+    const uploadToModulate = useCallback(async () => {
+        if (!modulateFile) {
+            setModulateError("Choose an audio file before uploading.");
+            return;
+        }
+
+        setModulateError(null);
+        setModulateResult(null);
+        setIsModulateUploading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append("upload_file", modulateFile, modulateFile.name);
+            formData.append("userId", getClientUserId());
+            formData.append("problemId", problemId);
+            formData.append("problemTitle", problem?.title || `Problem ${problemId}`);
+            formData.append("difficulty", difficulty);
+            formData.append("focusRole", focusedRole?.role || "");
+
+            const response = await fetch("/api/voice/upload", {
+                method: "POST",
+                body: formData,
+            });
+
+            const payload = (await response
+                .json()
+                .catch(() => null)) as ModulateUploadResponse | null;
+
+            if (!response.ok || !payload?.ok) {
+                throw new Error(
+                    payload?.error || `Modulate upload failed (${response.status}).`
+                );
+            }
+
+            setModulateResult({
+                transcript: payload.transcript,
+                responseText: payload.responseText,
+                audioUrl: payload.audioUrl,
+                message: payload.message,
+            });
+
+            if (payload.transcript || payload.responseText) {
+                setMessages((prev) => {
+                    const appended: ChatMessage[] = [];
+                    if (payload.transcript) {
+                        appended.push({
+                            role: "user",
+                            text: payload.transcript,
+                            timestamp: new Date(),
+                        });
+                    }
+                    if (payload.responseText) {
+                        appended.push({
+                            role: "agent",
+                            text: payload.responseText,
+                            timestamp: new Date(),
+                        });
+                    }
+                    return [...prev, ...appended];
+                });
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setModulateError(message);
+        } finally {
+            setIsModulateUploading(false);
+        }
+    }, [difficulty, focusedRole, modulateFile, problem, problemId]);
 
     const endCall = useCallback(async () => {
         try {
             await conversation.endSession();
-
-            // Format transcript as a labelled string for the evaluate endpoint
-            const currentMessages = messagesRef.current;
-            if (currentMessages.length > 0) {
-                setIsAnalyzing(true);
-                try {
-                    const transcriptString = currentMessages
-                        .map((m, i) => {
-                            const speaker = m.role === "user" ? "Coach" : "Client";
-                            return `T${i + 1} (${speaker}): ${m.text}`;
-                        })
-                        .join("\n");
-
-                    const res = await fetch("/api/evaluate", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ transcript: transcriptString }),
-                    });
-
-                    if (res.ok) {
-                        const { evidence, scores: analysis } = await res.json();
-
-                        // Compute overall score
-                        const scored = analysis.filter(
-                            (a: { category: string }) => a.category !== "RED_FLAGS"
-                        );
-                        const overallScore = scored.length
-                            ? Math.round(
-                                (scored.reduce(
-                                    (s: number, a: { score: number }) => s + a.score,
-                                    0
-                                ) /
-                                    (scored.length * 10)) *
-                                100
-                            )
-                            : 0;
-
-                        // Save to Convex
-                        const sessionId = await saveSession({
-                            problemId,
-                            problemTitle: problem?.title || `Problem ${problemId}`,
-                            difficulty,
-                            transcript: transcriptString,
-                            evidence,
-                            analysis,
-                            overallScore,
-                            duration: callDuration,
-                        });
-
-                        router.push(
-                            `/practice/${problemId}/analysis?session=${sessionId}`
-                        );
-                    } else {
-                        const errBody = await res.json().catch(() => null);
-                        const errMsg = errBody?.error || `Analysis failed (${res.status})`;
-                        console.error("Evaluate API error:", errMsg);
-                        setErrorMessage(errMsg);
-                        setIsAnalyzing(false);
-                    }
-                } catch (err) {
-                    console.error("Failed to analyse session:", err);
-                    setIsAnalyzing(false);
-                }
-            }
         } catch (error) {
-            console.error("Failed to end call:", error);
+            console.warn("Failed to end ElevenLabs session cleanly:", error);
         }
-    }, [conversation, problemId, problem, difficulty, callDuration, router, saveSession]);
+
+        const currentMessages = messagesRef.current;
+        if (currentMessages.length === 0) {
+            setErrorMessage("No transcript captured. Try another interview round.");
+            return;
+        }
+
+        setIsAnalyzing(true);
+        setErrorMessage(null);
+
+        try {
+            const transcriptString = currentMessages
+                .map((message, index) => {
+                    const speaker =
+                        message.role === "user" ? "Candidate" : "Interviewer";
+                    return `T${index + 1} (${speaker}): ${message.text}`;
+                })
+                .join("\n");
+
+            const res = await fetch("/api/evaluate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ transcript: transcriptString }),
+            });
+
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => null);
+                const errMsg = errBody?.error || `Analysis failed (${res.status})`;
+                setErrorMessage(errMsg);
+                setIsAnalyzing(false);
+                return;
+            }
+
+            const { evidence, scores } = await res.json();
+            const analysis: AnalysisMetric[] = Array.isArray(scores)
+                ? scores
+                      .filter(
+                          (item): item is Partial<AnalysisMetric> =>
+                              Boolean(item && typeof item === "object")
+                      )
+                      .map((item) => ({
+                          category:
+                              typeof item.category === "string"
+                                  ? item.category
+                                  : "Unknown",
+                          metric:
+                              typeof item.metric === "string"
+                                  ? item.metric
+                                  : "Unknown Metric",
+                          score:
+                              typeof item.score === "number" &&
+                              Number.isFinite(item.score)
+                                  ? item.score
+                                  : 0,
+                          comments:
+                              typeof item.comments === "string"
+                                  ? item.comments
+                                  : "",
+                      }))
+                : [];
+
+            const scored = analysis.filter((a) => a.category !== "RED_FLAGS");
+            const overallScore = scored.length
+                ? Math.round(
+                      (scored.reduce((sum, item) => sum + item.score, 0) /
+                          (scored.length * 10)) *
+                          100
+                  )
+                : 0;
+
+            const baseTitle = problem?.title || `Problem ${problemId}`;
+            const sessionTitle = focusedRole
+                ? `${baseTitle} · ${focusedRole.role}`
+                : baseTitle;
+            const createdAt = Date.now();
+
+            const sessionId = saveSessionToStorage({
+                problemId,
+                problemTitle: sessionTitle,
+                difficulty,
+                transcript: transcriptString,
+                evidence,
+                analysis,
+                overallScore,
+                duration: callDuration,
+                createdAt,
+            });
+
+            try {
+                const memoryResponse = await fetch("/api/memory/upsert", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: getClientUserId(),
+                        sessionId,
+                        problemId,
+                        problemTitle: sessionTitle,
+                        difficulty,
+                        transcript: transcriptString,
+                        overallScore,
+                        duration: callDuration,
+                        createdAt,
+                        analysis,
+                    }),
+                });
+
+                if (!memoryResponse.ok) {
+                    console.warn("Memory upsert failed:", await memoryResponse.text());
+                }
+            } catch (memoryError) {
+                console.warn("Memory upsert failed:", memoryError);
+            }
+
+            router.push(`/practice/${problemId}/analysis?session=${sessionId}`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setErrorMessage(message);
+            setIsAnalyzing(false);
+        }
+    }, [
+        callDuration,
+        conversation,
+        difficulty,
+        focusedRole,
+        problem,
+        problemId,
+        router,
+    ]);
 
     const formatDuration = (seconds: number) => {
         const m = Math.floor(seconds / 60)
@@ -327,7 +548,7 @@ export default function PracticeSessionPage() {
                 <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--primary-light)] border-t-transparent" />
                 <h2 className="text-xl font-semibold text-white">Analyzing your session...</h2>
                 <p className="text-sm text-[var(--text-muted)]">
-                    Evaluating coaching performance across key competencies
+                    Evaluating interview performance across key competencies
                 </p>
             </div>
         );
@@ -375,7 +596,7 @@ export default function PracticeSessionPage() {
                         </div>
                         {sidebarOpen && (
                             <span className="whitespace-nowrap text-lg font-bold text-white">
-                                IASO AI
+                                Interview Gym
                             </span>
                         )}
                     </div>
@@ -432,7 +653,13 @@ export default function PracticeSessionPage() {
                         </button>
                         {/* Back button */}
                         <button
-                            onClick={() => router.push("/practice")}
+                            onClick={() =>
+                                router.push(
+                                    focusedRole
+                                        ? `/practice?focusRole=${encodeURIComponent(focusedRole.id)}`
+                                        : "/practice"
+                                )
+                            }
                             className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-light)] hover:text-white"
                         >
                             {Icons.back}
@@ -444,6 +671,7 @@ export default function PracticeSessionPage() {
                             </h1>
                             <p className="text-xs text-[var(--text-muted)]">
                                 {problem.category} · {difficultyLabels[difficulty]}
+                                {focusedRole ? ` · ${focusedRole.role}` : ""}
                             </p>
                         </div>
                     </div>
@@ -503,7 +731,7 @@ export default function PracticeSessionPage() {
                                                 {Icons.mic}
                                                 <span className="mt-1 text-xs font-medium text-white/80">
                                                     {isSpeaking || agentMode === "speaking"
-                                                        ? "Agent speaking"
+                                                        ? "Interviewer speaking"
                                                         : "Listening..."}
                                                 </span>
                                             </div>
@@ -538,11 +766,29 @@ export default function PracticeSessionPage() {
                                 </h2>
                                 <p className="mb-6 max-w-sm text-center text-sm text-[var(--text-muted)]">
                                     {isConnected
-                                        ? "Your AI client is active. Practice your coaching techniques in real-time."
+                                        ? "Your AI interviewer is active. Practice your interview responses in real-time."
                                         : isConnecting
-                                            ? "Setting up your practice session..."
+                                            ? "Connecting to ElevenLabs interviewer..."
                                             : problem.description}
                                 </p>
+
+                                {focusedRole && (
+                                    <div className="mb-6 w-full max-w-xl rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-left">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
+                                            Role Focus
+                                        </p>
+                                        <p className="mt-1 text-sm font-semibold text-white">
+                                            {focusedRole.role} · {focusedRole.domain}
+                                        </p>
+                                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                                            {focusedRole.aspiration}
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-[var(--text-muted)]/90">
+                                            {focusedRole.postings.length} linked posting
+                                            {focusedRole.postings.length === 1 ? "" : "s"}
+                                        </p>
+                                    </div>
+                                )}
 
                                 {/* Error */}
                                 {errorMessage && (
@@ -560,7 +806,7 @@ export default function PracticeSessionPage() {
                                             className="flex cursor-pointer items-center gap-3 rounded-2xl bg-gradient-to-r from-[var(--accent-green)] to-[#2dd4bf] px-8 py-4 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(52,211,153,0.4)] active:scale-95"
                                         >
                                             {Icons.phone}
-                                            Start Call
+                                            Start Live Interview
                                         </button>
                                     ) : isConnecting ? (
                                         <button
@@ -577,7 +823,7 @@ export default function PracticeSessionPage() {
                                             className="flex cursor-pointer items-center gap-3 rounded-2xl bg-gradient-to-r from-red-500 to-red-600 px-8 py-4 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(239,68,68,0.4)] active:scale-95"
                                         >
                                             {Icons.phoneOff}
-                                            End Call
+                                            Finish & Analyze
                                         </button>
                                     )}
                                 </div>
@@ -605,7 +851,7 @@ export default function PracticeSessionPage() {
                                                     }`}
                                             >
                                                 <span className="flex-shrink-0 text-xs font-bold uppercase opacity-60">
-                                                    {msg.role === "agent" ? "AI" : "You"}
+                                                    {msg.role === "agent" ? "Interviewer" : "Candidate"}
                                                 </span>
                                                 <span>{msg.text}</span>
                                             </div>
@@ -649,6 +895,77 @@ export default function PracticeSessionPage() {
                                     className="h-full w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm leading-relaxed text-white placeholder-[var(--text-muted)]/50 transition-all duration-300 focus:border-[var(--primary-light)] focus:ring-1 focus:ring-[var(--glow)] focus:outline-none"
                                     style={{ fontFamily: "var(--font-mono), monospace" }}
                                 />
+
+                                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)]/50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
+                                        Modulate Async Review
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                        Optional: upload an interview answer clip for async processing. This is separate from live ElevenLabs conversation.
+                                    </p>
+
+                                    <input
+                                        type="file"
+                                        accept=".aac,.aiff,.flac,.mov,.mp3,.mp4,.ogg,.opus,.wav,.webm,audio/*"
+                                        onChange={(event) =>
+                                            setModulateFile(
+                                                event.target.files?.[0] || null
+                                            )
+                                        }
+                                        className="mt-3 block w-full text-xs text-[var(--text-muted)] file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[var(--primary)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+                                    />
+
+                                    <div className="mt-3 flex items-center gap-2">
+                                        <button
+                                            onClick={() => void uploadToModulate()}
+                                            disabled={isModulateUploading || !modulateFile}
+                                            className="cursor-pointer rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {isModulateUploading
+                                                ? "Uploading..."
+                                                : "Upload to Modulate"}
+                                        </button>
+                                        {modulateFile && (
+                                            <span className="truncate text-[11px] text-[var(--text-muted)]">
+                                                {modulateFile.name}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {modulateError && (
+                                        <p className="mt-2 text-xs text-red-300">
+                                            {modulateError}
+                                        </p>
+                                    )}
+
+                                    {modulateResult && (
+                                        <div className="mt-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 p-2 text-xs text-white">
+                                            {modulateResult.message && (
+                                                <p>{modulateResult.message}</p>
+                                            )}
+                                            {modulateResult.transcript && (
+                                                <p className="mt-1">
+                                                    Transcript: {modulateResult.transcript}
+                                                </p>
+                                            )}
+                                            {modulateResult.responseText && (
+                                                <p className="mt-1">
+                                                    Response: {modulateResult.responseText}
+                                                </p>
+                                            )}
+                                            {modulateResult.audioUrl && (
+                                                <a
+                                                    href={modulateResult.audioUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="mt-1 inline-block font-semibold text-[var(--accent)] hover:underline"
+                                                >
+                                                    Open response audio
+                                                </a>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
                                 <span className="text-xs text-[var(--text-muted)]">

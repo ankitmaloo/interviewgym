@@ -6,12 +6,6 @@ import { useConversation } from "@elevenlabs/react";
 import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { getProblemById, type Difficulty } from "@/lib/problems";
-import {
-    loadRoleTargetsFromStorage,
-    loadSelectedRoleTargetId,
-    type RoleTarget,
-} from "@/lib/roleTargets";
-import { getClientUserId } from "@/lib/userIdentity";
 
 /* ─── Icons ─── */
 const Icons = {
@@ -96,13 +90,6 @@ type ChatMessage = {
     timestamp: Date;
 };
 
-type AnalysisMetric = {
-    category: string;
-    metric: string;
-    score: number;
-    comments: string;
-};
-
 const difficultyLabels: Record<Difficulty, string> = {
     easy: "Easy",
     medium: "Medium",
@@ -116,12 +103,10 @@ export default function PracticeSessionPage() {
     const problemId = params.id as string;
     const problem = getProblemById(problemId);
     const difficulty = (searchParams.get("difficulty") || "easy") as Difficulty;
-    const focusRoleIdFromQuery = searchParams.get("focusRole");
 
     const [authenticated, setAuthenticated] = useState(false);
     const [checking, setChecking] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [focusedRole, setFocusedRole] = useState<RoleTarget | null>(null);
     const [notes, setNotes] = useState(
         "Session Notes\n─────────────────────\n\n• Key observations:\n\n\n• Action items:\n\n\n• Follow-up questions:\n\n"
     );
@@ -192,20 +177,6 @@ export default function PracticeSessionPage() {
         }
         setChecking(false);
     }, [router]);
-
-    useEffect(() => {
-        if (!authenticated) return;
-
-        const storedTargets = loadRoleTargetsFromStorage();
-        const requestedRoleId = focusRoleIdFromQuery || loadSelectedRoleTargetId();
-        if (!requestedRoleId) {
-            setFocusedRole(null);
-            return;
-        }
-
-        const matchingRole = storedTargets.find((target) => target.id === requestedRoleId) ?? null;
-        setFocusedRole(matchingRole);
-    }, [authenticated, focusRoleIdFromQuery]);
 
     // Call timer
     useEffect(() => {
@@ -285,42 +256,16 @@ export default function PracticeSessionPage() {
                     });
 
                     if (res.ok) {
-                        const { evidence, scores } = await res.json();
-                        const analysis: AnalysisMetric[] = Array.isArray(scores)
-                            ? scores
-                                  .filter(
-                                      (item): item is Partial<AnalysisMetric> =>
-                                          Boolean(item && typeof item === "object")
-                                  )
-                                  .map((item) => ({
-                                      category:
-                                          typeof item.category === "string"
-                                              ? item.category
-                                              : "Unknown",
-                                      metric:
-                                          typeof item.metric === "string"
-                                              ? item.metric
-                                              : "Unknown Metric",
-                                      score:
-                                          typeof item.score === "number" &&
-                                          Number.isFinite(item.score)
-                                              ? item.score
-                                              : 0,
-                                      comments:
-                                          typeof item.comments === "string"
-                                              ? item.comments
-                                              : "",
-                                  }))
-                            : [];
+                        const { evidence, scores: analysis } = await res.json();
 
                         // Compute overall score
                         const scored = analysis.filter(
-                            (a) => a.category !== "RED_FLAGS"
+                            (a: { category: string }) => a.category !== "RED_FLAGS"
                         );
                         const overallScore = scored.length
                             ? Math.round(
                                 (scored.reduce(
-                                    (s, a) => s + a.score,
+                                    (s: number, a: { score: number }) => s + a.score,
                                     0
                                 ) /
                                     (scored.length * 10)) *
@@ -329,14 +274,9 @@ export default function PracticeSessionPage() {
                             : 0;
 
                         // Save to Convex
-                        const baseTitle = problem?.title || `Problem ${problemId}`;
-                        const sessionTitle = focusedRole
-                            ? `${baseTitle} · ${focusedRole.role}`
-                            : baseTitle;
-
                         const sessionId = await saveSession({
                             problemId,
-                            problemTitle: sessionTitle,
+                            problemTitle: problem?.title || `Problem ${problemId}`,
                             difficulty,
                             transcript: transcriptString,
                             evidence,
@@ -344,36 +284,6 @@ export default function PracticeSessionPage() {
                             overallScore,
                             duration: callDuration,
                         });
-
-                        // Persist cross-session memory in Neo4j (non-blocking for UX).
-                        try {
-                            const memoryResponse = await fetch("/api/memory/upsert", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    userId: getClientUserId(),
-                                    sessionId: String(sessionId),
-                                    problemId,
-                                    problemTitle:
-                                        problem?.title || `Problem ${problemId}`,
-                                    difficulty,
-                                    transcript: transcriptString,
-                                    overallScore,
-                                    duration: callDuration,
-                                    createdAt: Date.now(),
-                                    analysis,
-                                }),
-                            });
-
-                            if (!memoryResponse.ok) {
-                                console.warn(
-                                    "Memory upsert failed:",
-                                    await memoryResponse.text()
-                                );
-                            }
-                        } catch (memoryError) {
-                            console.warn("Memory upsert failed:", memoryError);
-                        }
 
                         router.push(
                             `/practice/${problemId}/analysis?session=${sessionId}`
@@ -393,7 +303,7 @@ export default function PracticeSessionPage() {
         } catch (error) {
             console.error("Failed to end call:", error);
         }
-    }, [conversation, problemId, problem, focusedRole, difficulty, callDuration, router, saveSession]);
+    }, [conversation, problemId, problem, difficulty, callDuration, router, saveSession]);
 
     const formatDuration = (seconds: number) => {
         const m = Math.floor(seconds / 60)
@@ -522,13 +432,7 @@ export default function PracticeSessionPage() {
                         </button>
                         {/* Back button */}
                         <button
-                            onClick={() =>
-                                router.push(
-                                    focusedRole
-                                        ? `/practice?focusRole=${encodeURIComponent(focusedRole.id)}`
-                                        : "/practice"
-                                )
-                            }
+                            onClick={() => router.push("/practice")}
                             className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-light)] hover:text-white"
                         >
                             {Icons.back}
@@ -540,7 +444,6 @@ export default function PracticeSessionPage() {
                             </h1>
                             <p className="text-xs text-[var(--text-muted)]">
                                 {problem.category} · {difficultyLabels[difficulty]}
-                                {focusedRole ? ` · ${focusedRole.role}` : ""}
                             </p>
                         </div>
                     </div>
@@ -640,24 +543,6 @@ export default function PracticeSessionPage() {
                                             ? "Setting up your practice session..."
                                             : problem.description}
                                 </p>
-
-                                {focusedRole && (
-                                    <div className="mb-6 w-full max-w-xl rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3 text-left">
-                                        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
-                                            Role Focus
-                                        </p>
-                                        <p className="mt-1 text-sm font-semibold text-white">
-                                            {focusedRole.role} · {focusedRole.domain}
-                                        </p>
-                                        <p className="mt-1 text-xs text-[var(--text-muted)]">
-                                            {focusedRole.aspiration}
-                                        </p>
-                                        <p className="mt-1 text-[11px] text-[var(--text-muted)]/90">
-                                            {focusedRole.postings.length} linked posting
-                                            {focusedRole.postings.length === 1 ? "" : "s"}
-                                        </p>
-                                    </div>
-                                )}
 
                                 {/* Error */}
                                 {errorMessage && (
